@@ -1,0 +1,25 @@
+{
+  "name": "collapse-lab",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Collapse Lab - 건물을 직접 설계하고 붕괴를 시뮬레이션하는 Three.js + cannon-es 프로젝트",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "format": "prettier --write \"src/**/*.{js,css}\" index.html",
+    "bench": "node scripts/bench-sim.mjs"
+  },
+  "dependencies": {
+    "cannon-es": "0.20.0",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "vite": "6.4.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

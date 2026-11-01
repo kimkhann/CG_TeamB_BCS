@@ -1,0 +1,161 @@
+/* [C · 화면] 조작 패널 꾸미기
+ * 🔧 임시 버전(베이스): 읽을 수 있을 정도의 최소 스타일.
+ * TODO(C): 프로포절의 도면(블루프린트) 톤 적용 */
+
+#panel {
+  background: #111a26;
+  color: #dbe4ee;
+  font:
+    14px/1.5 'Segoe UI',
+    'Malgun Gothic',
+    'Apple SD Gothic Neo',
+    sans-serif;
+  padding: 24px 22px;
+  border-right: 1px solid #263345;
+}
+
+.panel-header {
+  margin-bottom: 20px;
+}
+
+.panel-header h1 {
+  font-size: 20px;
+  margin: 4px 0 0;
+}
+
+.step {
+  margin: 0;
+  font: 12px monospace;
+  letter-spacing: 2px;
+  color: #ff6b63;
+}
+
+.muted {
+  margin: 6px 0 0;
+  color: #8a9ab0;
+}
+
+.group {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #263345;
+}
+
+.group h2 {
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field span {
+  color: #9fb0c5;
+  font-size: 13px;
+}
+
+select,
+input[type='range'] {
+  width: 100%;
+}
+
+select {
+  padding: 8px;
+  background: #1a2636;
+  color: inherit;
+  border: 1px solid #34445a;
+  border-radius: 4px;
+}
+
+.type-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 14px;
+  background: #182334;
+  color: inherit;
+  border: 1px solid #34445a;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.type-card span {
+  color: #8a9ab0;
+  font-size: 13px;
+}
+
+.type-card.active {
+  border-color: #ff6b63;
+  background: #2a1f24;
+}
+
+.row,
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions {
+  justify-content: space-between;
+}
+
+.btn {
+  padding: 9px 14px;
+  background: #1f2c3e;
+  color: inherit;
+  border: 1px solid #3a4b63;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: #2f5f8f;
+  border-color: #3f78b0;
+}
+
+.btn.danger {
+  width: 100%;
+  background: #8f2f2b;
+  border-color: #b5443e;
+}
+
+.target {
+  font-size: 13px;
+  color: #c5d2e0;
+  min-height: 2.6em;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.results dt {
+  color: #8a9ab0;
+}
+
+.results dd {
+  margin: 0;
+  font-family: monospace;
+  word-break: break-all;
+}

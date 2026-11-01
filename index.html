@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collapse Lab · 건물 붕괴 시뮬레이션</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- C(ui/)가 채우는 왼쪽 조작 패널 -->
+      <aside id="panel" aria-label="조작 패널"></aside>
+      <!-- A(render/)가 3D 캔버스를 붙이는 오른쪽 화면 -->
+      <main id="viewport" aria-label="3D 화면"></main>
+    </div>
+    <!-- BASE: ?debug=1 일 때 FPS · 부재 수 표시 -->
+    <div id="debug" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
