@@ -26,14 +26,14 @@ export const BUILDING_TYPES = {
     id: 'apartment',
     label: '아파트',
     description: '기둥과 보로 이루어진 라멘 구조, 고층',
-    floors: { min: 3, max: 10, default: 6 },
+    floors: { min: 3, max: 8, default: 5 },
     defaultMaterials: { frame: 'rc', wall: 'rc', slab: 'rc', facade: 'window' },
   },
   lshape: {
     id: 'lshape',
     label: 'L자형 건물',
     description: '두 동이 꺾여 붙은 형태, 비대칭 붕괴',
-    floors: { min: 2, max: 6, default: 3 },
+    floors: { min: 2, max: 5, default: 3 },
     defaultMaterials: { frame: 'steel', wall: 'panel', slab: 'rc', facade: 'curtain' },
   },
 };

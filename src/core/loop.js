@@ -7,6 +7,8 @@
 
 export const FIXED_STEP = 1 / 60;
 const MAX_FRAME = 0.1; // 탭 전환 등으로 프레임이 길어져도 한 번에 0.1초 이상 진행하지 않음
+/** 한 프레임에 최대 몇 번까지 시뮬레이션을 진행할지. 물리 계산이 무거우면 멈추는 대신 느리게 재생됩니다. */
+const MAX_STEPS_PER_FRAME = 4;
 
 /**
  * @param {Object} handlers
@@ -26,11 +28,11 @@ export function startLoop({ step, frame, isRunning, getSpeed }) {
     if (isRunning()) {
       accumulator += frameDt * getSpeed();
       let guard = 0;
-      while (accumulator >= FIXED_STEP && guard++ < 10) {
+      while (accumulator >= FIXED_STEP && guard++ < MAX_STEPS_PER_FRAME) {
         step(FIXED_STEP);
         accumulator -= FIXED_STEP;
       }
-      if (guard >= 10) accumulator = 0; // 너무 밀리면 버림 (느린 컴퓨터 보호)
+      if (guard >= MAX_STEPS_PER_FRAME) accumulator = 0; // 계산이 밀리면 버림 → 화면이 멈추지 않고 느리게 재생됨
     } else {
       accumulator = 0;
     }

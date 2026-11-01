@@ -27,6 +27,7 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  *
  * @typedef {Object} Part
  * @property {string} id                 고유 ID (예: 'col-1-0-0')
+ * @property {string} label              화면 표시용 이름 (예: '1층 A1 기둥')
  * @property {'column'|'beam'|'slab'|'wall'|'roof'|'window'|'fragment'} kind 부재 종류
  * @property {number} floor              층 번호 (1부터, 지붕은 floors + 1)
  * @property {string} material           재료 ID (data/ids.js 의 MATERIALS)
@@ -42,11 +43,16 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  */
 
 /**
+ * 시나리오의 대상 — 부재 하나, 또는 위치 + 반경
+ * @typedef {{ kind:'part', partId:string } | { kind:'area', position:[number,number,number], radius:number }} ScenarioTarget
+ */
+
+/**
  * 붕괴 시나리오 실행 요청 (C가 보내고 B가 실행)
  * @typedef {Object} Scenario
  * @property {'impact'|'explosion'|'earthquake'|'fire'} type
  * @property {number} intensity          세기 (0 ~ 1)
- * @property {string|null} targetPartId  대상 부재 (지진은 null)
+ * @property {ScenarioTarget|null} target 대상 (지진은 null 가능)
  */
 
 /**
@@ -68,6 +74,7 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  */
 export function createPart(fields) {
   return {
+    label: fields.id,
     quaternion: [0, 0, 0, 1],
     supportedBy: [],
     structural: fields.kind !== 'window',

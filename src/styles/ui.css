@@ -159,3 +159,107 @@ select {
   font-family: monospace;
   word-break: break-all;
 }
+
+/* ── 시뮬레이션 화면 (베이스 보강) ───────────────── */
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #7f90a6;
+}
+
+.btn.on {
+  border-color: #ff6b63;
+  background: #3a2427;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 12px;
+}
+
+.segmented .btn {
+  border-radius: 0;
+}
+
+.segmented .btn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.segmented .btn:last-child {
+  border-radius: 0 4px 4px 0;
+  border-left: none;
+}
+
+.mode-panel {
+  margin-bottom: 8px;
+}
+
+.row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.column-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 6px;
+}
+
+.btn.column {
+  padding: 6px 0;
+  font-family: monospace;
+}
+
+.btn.column.dead {
+  text-decoration: line-through;
+  color: #8b6260;
+}
+
+.btn.danger + .btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: #9fb0c5;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  display: block;
+}
+
+.log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #c5d2e0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.log li span {
+  display: inline-block;
+  width: 46px;
+  color: #7f90a6;
+  font-family: monospace;
+}

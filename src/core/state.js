@@ -22,6 +22,10 @@ import { defaultSpec } from './types.js';
  * @property {number} simTime                           시뮬레이션 경과 시간 (초)
  * @property {import('./types.js').SimResults|null} results 최근 결과
  * @property {number} buildVersion                      건물을 새로 만들 때마다 1씩 증가
+ * @property {'part'|'area'} targetMode                 시나리오 대상 지정 방식: 부재 하나 / 위치 + 반경
+ * @property {{position:[number,number,number], radius:number, floor?:number}|null} areaTarget  위치 · 범위 대상
+ * @property {boolean} hideFacade                       외벽 · 창 숨기기 (골조 보기)
+ * @property {number|null} cutFloor                     단면 보기: 이 층보다 위층을 숨김 (null = 전체 보기)
  */
 
 /** @type {AppState} */
@@ -30,6 +34,10 @@ let state = {
   spec: defaultSpec('piloti'),
   selectedPartId: null,
   hoveredPartId: null,
+  targetMode: 'part',
+  areaTarget: null,
+  hideFacade: false,
+  cutFloor: null,
   paused: false,
   speed: 1,
   simTime: 0,

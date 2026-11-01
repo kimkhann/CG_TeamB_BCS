@@ -32,6 +32,19 @@ import { createRandom } from './random.js';
 import { computeResults } from './results.js';
 import { SCENARIO_RUNNERS } from './scenarios/index.js';
 
+/**
+ * 점에서 부재 상자 표면까지의 거리 (회전은 무시한 근사값). 큰 부재도 가장자리 기준으로 범위 판정.
+ * @param {[number,number,number]} point
+ */
+function distanceToBox(point, part) {
+  let sum = 0;
+  for (let a = 0; a < 3; a++) {
+    const d = Math.abs(point[a] - part.position[a]) - part.size[a] / 2;
+    if (d > 0) sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
 /** 이 속도(m/s) 아래로 SETTLE_TIME 초 동안 머물면 멈춘 것으로 판단 */
 const SETTLE_SPEED = 0.35;
 const SETTLE_TIME = 0.8;
@@ -93,7 +106,7 @@ export function createSimulation(parts, { emit, seed }) {
     part.state = 'failed';
     part.hp = 0;
     if (part.sim.body) world.removeBody(part.sim.body);
-    if (!firstFailedPartId) firstFailedPartId = part.id;
+    if (!firstFailedPartId && part.structural) firstFailedPartId = part.id;
     emit(EVENTS.PART_FAILED, { partId: part.id });
 
     const count = Math.max(1, materialPhysics[part.material]?.fragments ?? 2);
@@ -164,6 +177,32 @@ export function createSimulation(parts, { emit, seed }) {
     /** 시간이 흐르며 작용하는 효과를 등록합니다. fn(dt)가 true를 반환하면 끝남. */
     addOngoing(fn) {
       ongoing.push(fn);
+    },
+
+    /**
+     * 시나리오 대상을 중심점 · 반경 · 부재로 풀어 줍니다.
+     * @returns {{ center:[number,number,number]|null, radius:number|null, part:object|null }}
+     */
+    resolveTarget(target) {
+      if (target?.kind === 'part') {
+        const part = byId.get(target.partId) ?? null;
+        return { center: part ? [...part.position] : null, radius: null, part };
+      }
+      if (target?.kind === 'area') {
+        return { center: [...target.position], radius: target.radius, part: null };
+      }
+      return { center: null, radius: null, part: null };
+    },
+
+    /** 중심에서 반경 안에 있는 살아 있는 부재와 거리 목록 */
+    partsWithin(center, radius) {
+      const result = [];
+      for (const part of parts) {
+        if (!isAlive(part)) continue;
+        const d = distanceToBox(center, part);
+        if (d <= radius) result.push({ part, distance: d });
+      }
+      return result;
     },
   };
 

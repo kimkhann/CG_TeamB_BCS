@@ -34,7 +34,7 @@ http://localhost:5173/?type=apartment&floors=8&frame=wood&screen=simulate&debug=
 | 옵션 | 값 |
 |---|---|
 | `type` | `house` `piloti` `apartment` `lshape` |
-| `floors` | 층수 (형태별 범위 안에서) |
+| `floors` | 층수 (단독주택 1~3, 필로티 2~5, 아파트 3~8, L자형 2~5) |
 | `frame` `wall` `slab` `facade` | 부위별 재료 ID (`rc` `steel` `wood` `brick` `panel` `window` `curtain`) |
 | `screen` | `select` `configure` `simulate` |
 | `debug` | `1` 이면 FPS · 부재 수 표시 |
@@ -51,6 +51,7 @@ src/
 ├─ core/                  공용  types.js(데이터 약속) events.js state.js loop.js devParams.js
 ├─ data/
 │  ├─ ids.js              공용  형태 · 재료 · 시나리오 ID
+│  ├─ stateColors.js      공용  상태별 표시 색
 │  ├─ materialLooks.js    A     재료별 겉모습
 │  └─ materialPhysics.js  B     재료별 물성
 ├─ build/                 A     makeBuilding(spec) — 형태별 건물 생성

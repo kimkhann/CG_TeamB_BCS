@@ -39,12 +39,15 @@ const ui = mountUI(panelEl, { renderer, getParts: () => parts });
 /** 시뮬레이션 화면에서만 존재 */
 let sim = null;
 
-/** 설정(spec)으로 건물을 새로 만들고, 시뮬레이션 화면이면 시뮬레이션도 새로 준비합니다. */
-function rebuild() {
+/**
+ * 설정(spec)으로 건물을 새로 만들고, 시뮬레이션 화면이면 시뮬레이션도 새로 준비합니다.
+ * @param {boolean} keepTarget  true면 선택한 부재 · 위치 대상을 유지 (초기화 버튼)
+ */
+function rebuild(keepTarget = false) {
   sim?.dispose();
   sim = null;
 
-  const { spec, screen, buildVersion } = store.get();
+  const { spec, screen, buildVersion, selectedPartId, areaTarget } = store.get();
   parts = makeBuilding(spec);
   renderer.setParts(parts);
 
@@ -54,7 +57,8 @@ function rebuild() {
   store.set({
     simTime: 0,
     results: sim ? sim.getResults() : null,
-    selectedPartId: null,
+    selectedPartId: keepTarget ? selectedPartId : null,
+    areaTarget: keepTarget ? areaTarget : null,
     hoveredPartId: null,
     paused: false,
     buildVersion: buildVersion + 1,
@@ -64,7 +68,8 @@ function rebuild() {
 // 설정이 바뀌거나, 시뮬레이션 화면에 들어오고 나갈 때 건물을 새로 만듭니다.
 store.subscribe((state, prev) => {
   const enteredOrLeftSim = (state.screen === 'simulate') !== (prev.screen === 'simulate');
-  if (state.spec !== prev.spec || enteredOrLeftSim) rebuild();
+  if (state.spec !== prev.spec) rebuild(false);
+  else if (enteredOrLeftSim) rebuild(true);
   if (state.selectedPartId !== prev.selectedPartId) renderer.setSelected(state.selectedPartId);
   if (state.hoveredPartId !== prev.hoveredPartId) renderer.setHovered(state.hoveredPartId);
 });
@@ -75,7 +80,7 @@ on(EVENTS.SCENARIO_RUN, (scenario) => {
   store.set({ paused: false });
   sim.runScenario(scenario);
 });
-on(EVENTS.SIM_RESET, () => rebuild());
+on(EVENTS.SIM_RESET, () => rebuild(true));
 
 // ── 루프 ─────────────────────────────────────────────
 let resultsTimer = 0;
