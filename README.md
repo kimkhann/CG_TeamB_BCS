@@ -13,11 +13,11 @@ how the failure spreads through the structure, piece by piece.
 
 ## Team
 
-| Student ID | Name | Role |
-|---|---|---|
-| 202234859 | Kim Khann | Project base & integration, [Role] |
-| 202234948 | Hur Jihaeng | [Role] |
-| 202431880 | Choi Eunsoo | [Role] |
+| Student ID | Name |
+|---|---|
+| 202234859 | Kim Khann |
+| 202234948 | Hur Jihaeng |
+| 202431880 | Choi Eunsoo |
 
 ## Key Features
 
