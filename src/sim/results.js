@@ -23,7 +23,8 @@ export function computeResults(parts, { time, firstFailedPartId, finished }) {
   }
   let floorsLost = 0;
   for (const slabs of slabsByFloor.values()) {
-    if (slabs.every((s) => s.state === 'falling' || s.state === 'settled')) floorsLost++;
+    if (slabs.every((s) => s.state === 'falling' || s.state === 'settled' || s.state === 'failed'))
+      floorsLost++;
   }
 
   return {

@@ -60,10 +60,17 @@ test('잠든 잔해는 좌표 복사를 멈추고 깨어나면 낙하/종료 판
     });
     for (let i = 0; i < 60; i++) sim.step(1 / 60);
     assert.equal(writes, 0);
+    // B 단계: 살짝 깨어난 정도(WAKE_SPEED 1 m/s 미만)는 '정지'를 유지 — 쌓인 잔해의 깨어남/잠듦 반복 방지
     p.sim.body.wakeUp();
-    p.sim.body.velocity.set(1, 0, 0);
+    p.sim.body.velocity.set(0.3, 0, 0);
     sim.step(1 / 60);
-    assert.ok(writes > 0);
+    assert.ok(writes > 0, '깨어 있는 동안은 좌표를 반영');
+    assert.equal(p.state, 'settled');
+    assert.equal(sim.getResults().finished, true);
+    // 실제로 빠르게 움직이면 다시 '떨어지는 중'
+    p.sim.body.wakeUp();
+    p.sim.body.velocity.set(3, 0, 0);
+    sim.step(1 / 60);
     assert.equal(p.state, 'falling');
     assert.equal(sim.getResults().finished, false);
   } finally {

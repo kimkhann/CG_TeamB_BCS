@@ -10,7 +10,9 @@ const parts = makeBuilding({ type, floors });
 const sim = createSimulation(parts, { emit: () => {} });
 
 // 1층 앞줄 기둥 두 개를 완전히 부숨 (프로포절 데모의 '붕괴 시연'과 같은 상황)
-const targets = parts.filter((p) => p.kind === 'column' && p.floor === 1 && p.grid?.j === 0).slice(0, 2);
+const targets = parts
+  .filter((p) => p.kind === 'column' && p.floor === 1 && p.grid?.j === 0)
+  .slice(0, 2);
 for (const t of targets) {
   sim.runScenario({ type: 'impact', intensity: 1, target: { kind: 'part', partId: t.id } });
   sim.runScenario({ type: 'impact', intensity: 1, target: { kind: 'part', partId: t.id } });

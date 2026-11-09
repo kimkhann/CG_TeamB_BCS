@@ -11,9 +11,13 @@
  *   falling  지지를 잃고 떨어지는 중 (움직이는 강체)
  *   settled  떨어진 뒤 멈춤
  *
- * 🔧 임시 버전(베이스): 위 흐름이 끝까지 동작하는 최소 구현입니다.
- * TODO(B): 하중 경로·재분배(structure.js), 낙하 충돌 피해(무게에 따른 아래층 파괴),
- *          지진·화재 고도화(scenarios/), 결과 지표(results.js)
+ * 무게에 따른 파괴 (B 단계, 모델 설명은 sim/impact.js · sim/B_NOTES.md)
+ *   - 충돌 피해: 떨어지는 부재가 서 있는 부재(장식 포함)와 처음 부딪힐 때 충돌 에너지를
+ *     맞은 부재의 흡수 능력과 비교해 체력을 깎음. 충돌 위치 · 방향에 따라 계수가 달라짐
+ *   - 잔해 하중: 멈춘 잔해가 어느 부재 위에 얹혀 있는지 기록하고, 수평 부재에 쌓인 무게가
+ *     설계 기준으로 계산한 여유 하중을 넘으면 서서히 부서짐
+ *
+ * TODO(B): 지진·화재 고도화(scenarios/), 결과 지표(results.js)
  */
 
 import { EVENTS } from '../core/events.js';
@@ -29,6 +33,15 @@ import {
 } from './physics.js';
 import { isAlive, propagateSupport } from './structure.js';
 import { createRandom } from './random.js';
+import {
+  G,
+  MIN_IMPACT_SPEED,
+  absorbedEnergy,
+  impactDamage,
+  isHorizontalMember,
+  reserveCapacity,
+  overloadDamage,
+} from './impact.js';
 import { computeResults } from './results.js';
 import { SCENARIO_RUNNERS } from './scenarios/index.js';
 
@@ -45,9 +58,22 @@ function distanceToBox(point, part) {
   return Math.sqrt(sum);
 }
 
+/** 잔해 하중을 다시 계산하는 간격 (초) */
+const LOAD_CHECK_INTERVAL = 0.25;
+/** 먼지 이펙트: 이 에너지(kJ) 이상 충돌에서만, 초당 최대 개수 */
+const EFFECT_MIN_ENERGY = 5;
+const EFFECT_MAX_PER_SECOND = 8;
+/** 이펙트 세기 1에 해당하는 충돌 에너지 (kJ) */
+const EFFECT_FULL_ENERGY = 40;
+
 /** 이 속도(m/s) 아래로 SETTLE_TIME 초 동안 머물면 멈춘 것으로 판단 */
-const SETTLE_SPEED = 0.35;
+const SETTLE_SPEED = 0.5;
 const SETTLE_TIME = 0.8;
+/** 멈춘 잔해가 이 속도(m/s)를 넘으면 다시 '떨어지는 중'으로 봄 (받침이 사라지면 0.1초 안에 넘음) */
+const WAKE_SPEED = 1.0;
+/** 멈춘 잔해에 주는 감쇠 — 쌓인 상자들이 미세하게 떨며 미끄러지는 것을 줄임 */
+const SETTLED_DAMPING = { linear: 0.6, angular: 0.8 };
+const MOVING_DAMPING = { linear: 0.08, angular: 0.25 };
 
 /**
  * @typedef {Object} Simulation
@@ -75,11 +101,155 @@ export function createSimulation(parts, { emit, seed }) {
   /** 시간이 흐르며 계속 작용하는 효과 (예: 화재). (dt) => 끝났으면 true */
   const ongoing = [];
 
-  // 구조 부재에는 고정 강체를 붙여 둡니다. 떨어지는 부재가 서 있는 부재와 부딪힐 수 있게.
-  // 창문 같은 장식 부재는 떨어질 때 강체를 만듭니다 (서 있는 동안은 충돌할 일이 없어 성능 절약).
+  // 모든 부재(장식 포함)에 고정 강체를 붙여 둡니다.
+  // 떨어지는 부재가 서 있는 기둥 · 바닥 · 벽 · 창 · 난간과 부딪혀 피해를 줄 수 있게.
   for (const part of parts) {
-    part.sim = { body: part.structural ? createBodyForPart(part) : null, stillTime: 0 };
-    if (part.sim.body) world.addBody(part.sim.body);
+    part.sim = { body: createBodyForPart(part), stillTime: 0, restingOn: null };
+    world.addBody(part.sim.body);
+  }
+
+  /** 이번 단계에 일어난 충돌 (물리 계산 도중에는 강체를 지울 수 없어 모았다가 단계 후 처리) */
+  const impactQueue = [];
+  let loadTimer = 0;
+  let effectBudget = EFFECT_MAX_PER_SECOND;
+  let effectTimer = 0;
+
+  /** 움직이는 강체의 첫 충돌을 기록합니다. (cannon-es 의 collide 는 처음 닿을 때만 발생) */
+  function onCollide(event) {
+    const self = event.target;
+    const other = event.body;
+    const contact = event.contact;
+    const speed = Math.abs(contact.getImpactVelocityAlongNormal());
+    if (speed < MIN_IMPACT_SPEED) return;
+    const onOther = contact.bi === other;
+    const base = onOther ? contact.bi.position : contact.bj.position;
+    const r = onOther ? contact.ri : contact.rj;
+    impactQueue.push({
+      mass: self.mass,
+      speed,
+      targetId: other.userData?.partId ?? null, // 땅이면 null
+      point: [base.x + r.x, base.y + r.y, base.z + r.z],
+      normal: [contact.ni.x, contact.ni.y, contact.ni.z],
+    });
+  }
+
+  function watchImpacts(body) {
+    if (body.userData.watching) return;
+    body.userData.watching = true;
+    body.addEventListener('collide', onCollide);
+  }
+
+  /** 체력을 직접 깎습니다 (재료 강도는 호출하는 쪽에서 이미 반영). */
+  function loseHp(part, amount) {
+    if (!part || !isAlive(part) || amount <= 0) return;
+    part.hp = Math.max(0, part.hp - amount);
+    if (part.hp <= 0) fail(part);
+    else part.state = 'damaged';
+    emit(EVENTS.PART_DAMAGED, { partId: part.id, hp: part.hp });
+  }
+
+  function playCollisionEffect(point, energy) {
+    if (energy < EFFECT_MIN_ENERGY || effectBudget <= 0) return;
+    effectBudget--;
+    emit(EVENTS.IMPACT, {
+      position: point,
+      energy: Math.min(1, energy / EFFECT_FULL_ENERGY),
+      kind: 'collision',
+    });
+  }
+
+  /** 모아 둔 충돌을 피해로 바꿉니다. 피해가 있었으면 true */
+  function processImpacts() {
+    let damaged = false;
+    for (const hit of impactQueue) {
+      const target = hit.targetId ? byId.get(hit.targetId) : null;
+      const targetPhys = materialPhysics[target?.material ?? 'rc'];
+      playCollisionEffect(hit.point, absorbedEnergy(hit.mass, hit.speed, targetPhys));
+      if (!target || !isAlive(target)) continue; // 땅이나 이미 떨어진 부재는 피해 없음
+      const amount = impactDamage({
+        mass: hit.mass,
+        normalSpeed: hit.speed,
+        target,
+        targetPhys,
+        point: hit.point,
+        normal: hit.normal,
+      });
+      if (amount > 0) {
+        loseHp(target, amount);
+        damaged = true;
+      }
+    }
+    impactQueue.length = 0;
+    return damaged;
+  }
+
+  /** 멈춘 잔해가 어떤 부재 위에 얹혀 있는지 마지막 접촉으로 기록합니다. */
+  let contactIndex = null;
+  function contactsOf(body) {
+    if (!contactIndex) {
+      contactIndex = new Map();
+      for (const c of world.contacts) {
+        for (const [self, other, sign] of [
+          [c.bi, c.bj, 1],
+          [c.bj, c.bi, -1],
+        ]) {
+          if (!contactIndex.has(self)) contactIndex.set(self, []);
+          // other 가 self 의 아래에 있으면 self → other 방향의 y 성분이 음수
+          contactIndex.get(self).push({ other, down: c.ni.y * sign < -0.5 });
+        }
+      }
+    }
+    return contactIndex.get(body) ?? [];
+  }
+  function recordRest(part) {
+    const below = new Set();
+    for (const { other, down } of contactsOf(part.sim.body)) {
+      const id = other.userData?.partId;
+      if (down && id && id !== part.id) below.add(id);
+    }
+    part.sim.restingOn = below.size ? [...below] : null;
+  }
+
+  /** 쌓인 잔해 무게를 아래로 전달해 수평 부재의 하중 초과를 판정합니다. 피해가 있었으면 true */
+  function checkDebrisLoads(interval) {
+    const load = new Map(); // 부재 id → 얹힌 잔해 질량 (t)
+    const route = (id, mass, depth) => {
+      const p = byId.get(id);
+      if (!p) return;
+      if (isAlive(p)) {
+        load.set(id, (load.get(id) ?? 0) + mass);
+      } else if (
+        (p.state === 'settled' || p.state === 'falling') &&
+        p.sim.restingOn &&
+        depth < 12
+      ) {
+        // 잔해 위의 잔해: 아래 잔해가 얹힌 곳으로 무게를 넘김
+        const share = mass / p.sim.restingOn.length;
+        for (const next of p.sim.restingOn) route(next, share, depth + 1);
+      }
+    };
+    for (const p of parts) {
+      // 거의 멈춘 채 얹혀 있는 '떨어지는 중' 잔해도 무게를 전달함 (완전히 멈출 때까지 기다리지 않음)
+      if (p.state === 'falling' && p.sim.body.velocity.length() < SETTLE_SPEED) recordRest(p);
+      if ((p.state !== 'settled' && p.state !== 'falling') || !p.sim.restingOn) continue;
+      const share = p.sim.body.mass / p.sim.restingOn.length;
+      for (const id of p.sim.restingOn) route(id, share, 0);
+    }
+    let damaged = false;
+    for (const [id, mass] of load) {
+      const part = byId.get(id);
+      if (!isHorizontalMember(part)) continue;
+      const amount = overloadDamage(
+        mass * G,
+        reserveCapacity(part, materialPhysics[part.material]),
+        interval,
+      );
+      if (amount > 0) {
+        loseHp(part, amount);
+        damaged = true;
+      }
+    }
+    return damaged;
   }
 
   // ── 상태 변화 ──────────────────────────────────────
@@ -87,11 +257,8 @@ export function createSimulation(parts, { emit, seed }) {
   /** 지지를 잃은 부재를 떨어뜨립니다. */
   function detach(part) {
     part.state = 'falling';
-    if (!part.sim.body) {
-      part.sim.body = createBodyForPart(part);
-      world.addBody(part.sim.body);
-    }
     makeDynamic(part.sim.body, massOf(part));
+    watchImpacts(part.sim.body);
     const spin = 0.6;
     part.sim.body.angularVelocity.set(
       (random() - 0.5) * spin,
@@ -131,9 +298,10 @@ export function createSimulation(parts, { emit, seed }) {
         structural: false,
         state: 'falling',
       });
-      fragment.sim = { body: createBodyForPart(fragment), stillTime: 0 };
+      fragment.sim = { body: createBodyForPart(fragment), stillTime: 0, restingOn: null };
       world.addBody(fragment.sim.body);
       makeDynamic(fragment.sim.body, massOf(fragment));
+      watchImpacts(fragment.sim.body);
       fragment.sim.body.velocity.set((random() - 0.5) * 2, 0.5, (random() - 0.5) * 2);
       parts.push(fragment);
       byId.set(fragment.id, fragment);
@@ -156,10 +324,7 @@ export function createSimulation(parts, { emit, seed }) {
     damage(part, amount) {
       if (!part || !isAlive(part)) return;
       const strength = materialPhysics[part.material]?.strength ?? 1;
-      part.hp = Math.max(0, part.hp - amount / strength);
-      if (part.hp <= 0) fail(part);
-      else part.state = 'damaged';
-      emit(EVENTS.PART_DAMAGED, { partId: part.id, hp: part.hp });
+      loseHp(part, amount / strength);
     },
 
     /** 떨어지는 강체에 순간적인 힘을 줍니다. */
@@ -236,32 +401,68 @@ export function createSimulation(parts, { emit, seed }) {
       ) {
         world.step(dt);
       }
+      contactIndex = null;
+
+      // 무게에 따른 파괴 ①: 이번 단계의 충돌 피해
+      let damaged = processImpacts();
+      effectTimer += dt;
+      if (effectTimer >= 1) {
+        effectTimer = 0;
+        effectBudget = EFFECT_MAX_PER_SECOND;
+      }
 
       for (const part of parts) {
         if (part.state !== 'falling' && part.state !== 'settled') continue;
         const body = part.sim.body;
-        if (part.state === 'settled') {
-          if (body.sleepState === CANNON.Body.SLEEPING) continue;
-          part.state = 'falling';
-          part.sim.stillTime = 0;
-        }
-        copyBodyToPart(body, part);
-        if (part.state !== 'falling') continue;
-
-        // 충분히 느린 상태가 일정 시간 이어지면 멈춘 것으로 보고 강체를 재웁니다.
-        // (서로 기대어 미세하게 떨리는 잔해가 영원히 '떨어지는 중'으로 남지 않게)
         const slow =
           body.velocity.length() < SETTLE_SPEED && body.angularVelocity.length() < SETTLE_SPEED * 2;
-        part.sim.stillTime = slow ? part.sim.stillTime + dt : 0;
+
+        if (part.state === 'settled') {
+          if (body.sleepState === CANNON.Body.SLEEPING) continue;
+          // 옆 잔해에 살짝 닿아 깨어난 경우: 실제로 빠르게 움직이기 전까지는 '정지' 상태를 유지하고
+          // 조용해지면 다시 재웁니다. (깨어남 ↔ 잠듦이 반복되며 이벤트가 쏟아지는 것 방지)
+          copyBodyToPart(body, part);
+          if (body.velocity.length() < WAKE_SPEED) {
+            part.sim.stillTime = slow
+              ? part.sim.stillTime + dt
+              : Math.max(0, part.sim.stillTime - dt);
+            if (part.sim.stillTime > SETTLE_TIME) body.sleep();
+            continue;
+          }
+          part.state = 'falling';
+          part.sim.stillTime = 0;
+          part.sim.restingOn = null;
+          body.linearDamping = MOVING_DAMPING.linear;
+          body.angularDamping = MOVING_DAMPING.angular;
+          emit(EVENTS.PART_DETACHED, { partId: part.id });
+          continue;
+        }
+
+        copyBodyToPart(body, part);
+        // 충분히 느린 상태가 일정 시간 이어지면 멈춘 것으로 보고 강체를 재웁니다.
+        // (서로 기대어 미세하게 떨리는 잔해가 영원히 '떨어지는 중'으로 남지 않게)
+        // 잠깐 빨라졌다고 바로 0으로 돌리지 않고 천천히 줄임 (쌓인 잔해의 미세한 떨림 대응)
+        part.sim.stillTime = slow
+          ? part.sim.stillTime + dt
+          : Math.max(0, part.sim.stillTime - 2 * dt);
         if (body.sleepState === CANNON.Body.SLEEPING || part.sim.stillTime > SETTLE_TIME) {
           body.sleep();
+          body.linearDamping = SETTLED_DAMPING.linear;
+          body.angularDamping = SETTLED_DAMPING.angular;
           part.state = 'settled';
+          part.sim.stillTime = 0;
+          recordRest(part);
           emit(EVENTS.PART_SETTLED, { partId: part.id });
         }
       }
 
-      // TODO(B): 떨어지는 부재가 서 있는 부재와 세게 부딪히면 피해를 주기 (무게 기반 붕괴)
-      //          body.addEventListener('collide', (e) => { e.contact.getImpactVelocityAlongNormal() ... })
+      // 무게에 따른 파괴 ②: 쌓인 잔해 하중 (일정 간격으로)
+      loadTimer += dt;
+      if (loadTimer >= LOAD_CHECK_INTERVAL) {
+        if (checkDebrisLoads(loadTimer)) damaged = true;
+        loadTimer = 0;
+      }
+      if (damaged) ctx.updateSupports();
 
       if (scenarioActive && !finishedEmitted && !ongoing.length) {
         const moving = parts.some((p) => p.state === 'falling');
