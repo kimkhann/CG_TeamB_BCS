@@ -1,15 +1,15 @@
 /**
  * [A · 건물 생성] 아파트
  *
- * 🔧 임시 버전(베이스): 3×2칸 라멘(기둥 + 보) 골조, 모든 층 바깥 벽.
- * TODO(A): 층마다 반복되는 창호 패턴, 옥상 구조물, 코어(엘리베이터·계단)
+ * 3×2칸 라멘 골조, 반복 창호·발코니·옥탑·옥상 난간.
  */
 
 import { buildGridFrame } from '../frame.js';
+import { addEntrance, addBalconies, addCore, addParapets, markBuilding } from '../details.js';
 
 /** @param {import('../../core/types.js').BuildingSpec} spec */
 export function buildApartment(spec) {
-  return buildGridFrame({
+  const parts = buildGridFrame({
     spec,
     cells: [
       [1, 1, 1],
@@ -19,4 +19,9 @@ export function buildApartment(spec) {
     floorHeight: 3,
     hasWalls: () => true,
   });
+  addEntrance(parts);
+  addBalconies(parts, spec, { span: 5, floorHeight: 3, nx: 3, nz: 2, bays: [0, 2] });
+  addCore(parts, spec, { x: 0, z: 2, width: 2.6, depth: 2.4, floorHeight: 3, rooftop: true });
+  addParapets(parts, spec, 3);
+  return markBuilding(parts, spec);
 }

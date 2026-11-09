@@ -58,7 +58,15 @@ const colName = (i, j) => `${String.fromCharCode(65 + i)}${j + 1}`; // 격자 �
  * @param {boolean} [options.windows=true]  창문을 만들지
  * @returns {import('../core/types.js').Part[]}
  */
-export function buildGridFrame({ spec, cells, span, floorHeight, hasWalls, windows = true }) {
+export function buildGridFrame({
+  spec,
+  cells,
+  span,
+  floorHeight,
+  hasWalls,
+  windows = true,
+  curtainWall = false,
+}) {
   const { floors, materials } = spec;
   const nz = cells.length;
   const nx = cells[0].length;
@@ -191,15 +199,25 @@ export function buildGridFrame({ spec, cells, span, floorHeight, hasWalls, windo
       for (let k = 0; k < WALL_DIV_Y; k++) {
         for (let w = 0; w < WALL_DIV_X; w++) {
           const along = COLUMN_WIDTH / 2 + panelLength * (w + 0.5);
+          // 창 뒤에 벽을 겹치지 않습니다. 아래 패널은 창턱, 위 패널은 인방입니다.
+          // 기존 ID와 네 방향 지지 관계는 유지하여 B의 전파 규칙과 연결합니다.
+          const sill = curtainWall ? 0.24 : 0.82;
+          const header = curtainWall ? 0.18 : 0.3;
+          const height = windows ? (k === 0 ? sill : header) : panelHeight;
+          const panelY = windows
+            ? k === 0
+              ? height / 2
+              : wallHeight - height / 2
+            : panelHeight * (k + 0.5);
           const center = [
             start[0] + (axis === 'x' ? along : 0),
-            base + panelHeight * (k + 0.5),
+            base + panelY,
             start[1] + (axis === 'z' ? along : 0),
           ];
           const size =
             axis === 'x'
-              ? [panelLength, panelHeight, WALL_THICKNESS]
-              : [WALL_THICKNESS, panelHeight, panelLength];
+              ? [panelLength, height, WALL_THICKNESS]
+              : [WALL_THICKNESS, height, panelLength];
           add({
             id: wid(w, k),
             kind: 'wall',
@@ -215,19 +233,44 @@ export function buildGridFrame({ spec, cells, span, floorHeight, hasWalls, windo
           });
 
           if (windows && k === WALL_DIV_Y - 1) {
-            const offset = WALL_THICKNESS / 2 + 0.05;
+            const offset = 0.035;
+            const openingHeight = wallHeight - sill - header;
+            const openingWidth = panelLength - (curtainWall ? 0.08 : 0.18);
             add({
               id: `win-${wid(w, k)}`,
               kind: 'window',
               material: materials.facade,
               size:
                 axis === 'x'
-                  ? [panelLength * 0.6, panelHeight * 0.75, 0.08]
-                  : [0.08, panelHeight * 0.75, panelLength * 0.6],
-              position: [center[0] + normal[0] * offset, center[1], center[2] + normal[1] * offset],
-              supportedBy: [wid(w, k)],
+                  ? [openingWidth, openingHeight, 0.07]
+                  : [0.07, openingHeight, openingWidth],
+              position: [
+                center[0] + normal[0] * offset,
+                base + sill + openingHeight / 2,
+                center[2] + normal[1] * offset,
+              ],
+              supportedBy: [wid(w, 0), wid(w, 1)],
               structural: false,
+              view: { framed: true },
             });
+            // 얇은 창 사이 벽도 실제 상자 부재입니다. 겉모습과 충돌체가 일치합니다.
+            if (!curtainWall) {
+              add({
+                id: `jamb-${f}-${edgeId}-${w}`,
+                kind: 'wall',
+                material: materials.wall,
+                size:
+                  axis === 'x'
+                    ? [0.18, openingHeight, WALL_THICKNESS]
+                    : [WALL_THICKNESS, openingHeight, 0.18],
+                position: [
+                  center[0] + (axis === 'x' ? panelLength / 2 - 0.09 : 0),
+                  base + sill + openingHeight / 2,
+                  center[2] + (axis === 'z' ? panelLength / 2 - 0.09 : 0),
+                ],
+                supportedBy: [wid(w, 0), wid(w, 1)],
+              });
+            }
           }
         }
       }
