@@ -31,7 +31,7 @@ import {
   massOf,
   copyBodyToPart,
 } from './physics.js';
-import { isAlive, propagateSupport } from './structure.js';
+import { buildDependents, isAlive, propagateSupport } from './structure.js';
 import { createRandom } from './random.js';
 import {
   G,
@@ -107,6 +107,9 @@ export function createSimulation(parts, { emit, seed }) {
     part.sim = { body: createBodyForPart(part), stillTime: 0, restingOn: null };
     world.addBody(part.sim.body);
   }
+
+  /** 부재 → 그 부재가 받쳐 주는 부재 (기둥 횡지지 판단용, 처음 부재 기준 — 조각은 아무것도 받치지 않음) */
+  const dependents = buildDependents(parts);
 
   /** 이번 단계에 일어난 충돌 (물리 계산 도중에는 강체를 지울 수 없어 모았다가 단계 후 처리) */
   const impactQueue = [];
@@ -279,6 +282,18 @@ export function createSimulation(parts, { emit, seed }) {
       (random() - 0.5) * spin,
       (random() - 0.5) * spin,
     );
+    // 횡지지를 잃어 쓰러지는 기둥(아래 기둥은 멀쩡함): 위에 올려진 채 균형을 잡지 않도록 옆으로 기울임
+    if (
+      part.kind === 'column' &&
+      part.supportedBy.some((id) => byId.has(id) && isAlive(byId.get(id)))
+    ) {
+      const tip = 1.2;
+      part.sim.body.angularVelocity.set(
+        random() < 0.5 ? -tip : tip,
+        0,
+        random() < 0.5 ? -tip : tip,
+      );
+    }
     emit(EVENTS.PART_DETACHED, { partId: part.id });
   }
 
@@ -451,7 +466,7 @@ export function createSimulation(parts, { emit, seed }) {
 
     /** 피해를 준 뒤 반드시 호출: 받쳐지지 않는 부재를 떨어뜨립니다. */
     updateSupports() {
-      propagateSupport(parts, byId, detach);
+      propagateSupport(parts, byId, detach, dependents);
     },
 
     /** 시간이 흐르며 작용하는 효과를 등록합니다. fn(dt)가 true를 반환하면 끝남. */

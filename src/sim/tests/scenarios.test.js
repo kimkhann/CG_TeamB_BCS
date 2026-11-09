@@ -90,3 +90,50 @@ test('결과: 붕괴 진행 시간 · 층별 피해율 · 원인별 피해', () 
   assert.ok(r.collapseTime === null || r.collapseTime >= 0);
   sim.dispose();
 });
+
+test('횡지지: 보 · 바닥판을 모두 잃은 위층 기둥은 쓰러지고, 땅에 선 1층 기둥은 남음', async () => {
+  const { buildDependents, isLaterallyStable } = await import('../structure.js');
+  const lower = createPart({
+    id: 'c1',
+    kind: 'column',
+    floor: 1,
+    material: 'rc',
+    size: [0.4, 2.75, 0.4],
+    position: [0, 1.375, 0],
+    supportedBy: ['ground'],
+  });
+  const upper = createPart({
+    id: 'c2',
+    kind: 'column',
+    floor: 2,
+    material: 'rc',
+    size: [0.4, 2.75, 0.4],
+    position: [0, 4.375, 0],
+    supportedBy: ['c1'],
+  });
+  const beam = createPart({
+    id: 'b1',
+    kind: 'beam',
+    floor: 1,
+    material: 'rc',
+    size: [4, 0.35, 0.3],
+    position: [2, 2.8, 0],
+    supportedBy: ['c1'],
+  });
+  const parts = [lower, upper, beam];
+  const byId = new Map(parts.map((p) => [p.id, p]));
+  const deps = buildDependents(parts);
+  assert.ok(isLaterallyStable(upper, byId, deps), '아래 이음부의 보가 잡아 줌');
+  beam.state = 'settled';
+  assert.ok(!isLaterallyStable(upper, byId, deps), '잡아 줄 부재가 없음 → 쓰러짐');
+  assert.ok(isLaterallyStable(lower, byId, deps), '1층 기둥은 기초에 고정');
+});
+
+test('세기 설명: 시나리오별 실제 크기', async () => {
+  const { describeIntensity, mmiFromPga } = await import('../intensityScale.js');
+  assert.match(describeIntensity('impact', 1).headline, /시속 43km/);
+  assert.match(describeIntensity('explosion', 1).headline, /TNT 약 1.5 kg/);
+  assert.match(describeIntensity('earthquake', 1).headline, /진도 Ⅷ/);
+  assert.match(describeIntensity('fire', 1).headline, /20분/);
+  assert.equal(mmiFromPga(0.25).level, 'Ⅶ');
+});

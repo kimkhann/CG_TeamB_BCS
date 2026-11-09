@@ -17,6 +17,7 @@ import { SCENARIOS, BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
 import { STATE_COLORS } from '../../data/stateColors.js';
 import { h } from '../dom.js';
 import { columnsOf, floorCount } from '../floors.js';
+import { describeIntensity } from '../../sim/intensityScale.js';
 
 const STATE_LABELS = {
   intact: '정상',
@@ -38,6 +39,16 @@ export function renderSimulateScreen(root, ctx) {
   let partFloor = 1;
   const timers = [];
   const unsubscribers = [];
+  // 세기를 실제 크기로 보여 주는 문구 (계산은 B의 sim/intensityScale.js)
+  const scaleValue = h('span', { class: 'scale-value' });
+  const scaleHeadline = h('strong', { class: 'scale-headline' });
+  const scaleDetail = h('p', { class: 'hint scale-detail' });
+  const updateScale = () => {
+    const { headline, detail } = describeIntensity(scenarioType, intensity);
+    scaleValue.textContent = intensity.toFixed(2);
+    scaleHeadline.textContent = headline;
+    scaleDetail.textContent = detail;
+  };
   const findPart = (id) => (id ? ctx.getParts().find((p) => p.id === id) : null);
 
   // ── 보기 ─────────────────────────────────────────
@@ -263,6 +274,7 @@ export function renderSimulateScreen(root, ctx) {
     const state = store.get();
     const { selectedPartId, paused, results, targetMode, areaTarget, hideFacade, cutFloor } = state;
     const needsTarget = SCENARIOS[scenarioType].needsTarget;
+    updateScale();
 
     facadeButton.textContent = hideFacade ? '외벽 보이기' : '외벽 숨기기 · 골조 보기';
     facadeButton.classList.toggle('on', hideFacade);
@@ -363,16 +375,20 @@ export function renderSimulateScreen(root, ctx) {
       h(
         'label',
         { class: 'field' },
-        h('span', {}, '세기'),
+        h('span', {}, '세기 ', scaleValue),
         h('input', {
           type: 'range',
           min: 0.1,
           max: 1,
           step: 0.05,
           value: intensity,
-          oninput: (e) => (intensity = Number(e.target.value)),
+          oninput: (e) => {
+            intensity = Number(e.target.value);
+            updateScale();
+          },
         }),
       ),
+      h('div', { class: 'scale' }, scaleHeadline, scaleDetail),
       runButton,
       demoButton,
     ),
