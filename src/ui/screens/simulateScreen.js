@@ -17,6 +17,20 @@ import { SCENARIOS, BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
 import { STATE_COLORS } from '../../data/stateColors.js';
 import { h } from '../dom.js';
 import { columnsOf, floorCount } from '../floors.js';
+import {
+  SCALES,
+  describeScenario,
+  formatValue,
+  sliderFromValue,
+  valueFromSlider,
+} from '../../sim/scenarioScale.js';
+import {
+  REPORTS,
+  buildReport,
+  canOpenWindow,
+  downloadText,
+  openHtml,
+} from '../../sim/reports/index.js';
 
 const STATE_LABELS = {
   intact: '정상',
@@ -34,10 +48,61 @@ export function renderSimulateScreen(root, ctx) {
   const { spec } = store.get();
   const floors = floorCount(ctx.getParts()) || spec.floors;
   let scenarioType = 'impact';
-  let intensity = 0.6;
+  // per-scenario value with its own unit and range (impact km/h, explosion TNT kg, earthquake magnitude, fire minutes)
+  const values = Object.fromEntries(Object.entries(SCALES).map(([k, s]) => [k, s.defaultValue]));
+  let distanceKm = SCALES.earthquake.distance.defaultValue;
   let partFloor = 1;
   const timers = [];
   const unsubscribers = [];
+  // size slider and real-world description (ranges and conversions in B's sim/scenarioScale.js)
+  const scaleLabel = h('span', {});
+  const scaleValue = h('span', { class: 'scale-value' });
+  const scaleSlider = h('input', {
+    type: 'range',
+    min: 0,
+    max: 1000,
+    step: 1,
+    oninput: (e) => {
+      values[scenarioType] = valueFromSlider(SCALES[scenarioType], Number(e.target.value));
+      updateScale();
+    },
+  });
+  const distanceValue = h('span', { class: 'scale-value' });
+  const distanceSlider = h('input', {
+    type: 'range',
+    min: SCALES.earthquake.distance.min,
+    max: SCALES.earthquake.distance.max,
+    step: SCALES.earthquake.distance.step,
+    value: distanceKm,
+    oninput: (e) => {
+      distanceKm = Number(e.target.value);
+      updateScale();
+    },
+  });
+  const distanceField = h(
+    'label',
+    { class: 'field' },
+    h('span', {}, SCALES.earthquake.distance.label, distanceValue),
+    distanceSlider,
+  );
+  const scaleHeadline = h('strong', { class: 'scale-headline' });
+  const scaleDetail = h('p', { class: 'hint scale-detail' });
+  let shownType = null;
+  const updateScale = () => {
+    const scale = SCALES[scenarioType];
+    const value = values[scenarioType];
+    if (shownType !== scenarioType) {
+      shownType = scenarioType;
+      scaleLabel.textContent = scale.label;
+      scaleSlider.value = String(sliderFromValue(scale, value));
+    }
+    scaleValue.textContent = formatValue(scenarioType, value);
+    distanceField.hidden = !scale.distance;
+    distanceValue.textContent = `${distanceKm} km`;
+    const { headline, detail } = describeScenario(scenarioType, value, distanceKm);
+    scaleHeadline.textContent = headline;
+    scaleDetail.textContent = detail;
+  };
   const findPart = (id) => (id ? ctx.getParts().find((p) => p.id === id) : null);
 
   // ── 보기 ─────────────────────────────────────────
@@ -165,7 +230,12 @@ export function renderSimulateScreen(root, ctx) {
   }
 
   function run() {
-    emit(EVENTS.SCENARIO_RUN, { type: scenarioType, intensity, target: currentTarget() });
+    emit(EVENTS.SCENARIO_RUN, {
+      type: scenarioType,
+      value: values[scenarioType],
+      distanceKm: scenarioType === 'earthquake' ? distanceKm : undefined,
+      target: currentTarget(),
+    });
   }
 
   function runDemo() {
@@ -263,6 +333,7 @@ export function renderSimulateScreen(root, ctx) {
     const state = store.get();
     const { selectedPartId, paused, results, targetMode, areaTarget, hideFacade, cutFloor } = state;
     const needsTarget = SCENARIOS[scenarioType].needsTarget;
+    updateScale();
 
     facadeButton.textContent = hideFacade ? '외벽 보이기' : '외벽 숨기기 · 골조 보기';
     facadeButton.classList.toggle('on', hideFacade);
@@ -360,19 +431,9 @@ export function renderSimulateScreen(root, ctx) {
           Object.values(SCENARIOS).map((s) => h('option', { value: s.id }, s.label)),
         ),
       ),
-      h(
-        'label',
-        { class: 'field' },
-        h('span', {}, '세기'),
-        h('input', {
-          type: 'range',
-          min: 0.1,
-          max: 1,
-          step: 0.05,
-          value: intensity,
-          oninput: (e) => (intensity = Number(e.target.value)),
-        }),
-      ),
+      h('label', { class: 'field' }, h('span', {}, scaleLabel, scaleValue), scaleSlider),
+      distanceField,
+      h('div', { class: 'scale' }, scaleHeadline, scaleDetail),
       runButton,
       demoButton,
     ),
@@ -401,6 +462,7 @@ export function renderSimulateScreen(root, ctx) {
     h('section', { class: 'group' }, h('h2', {}, '상태 색'), legend),
     h('section', { class: 'group' }, h('h2', {}, '이벤트 로그'), logList),
     h('section', { class: 'group' }, h('h2', {}, '결과'), resultsBox),
+    reportSection(),
     h(
       'div',
       { class: 'actions' },
@@ -414,6 +476,121 @@ export function renderSimulateScreen(root, ctx) {
 
   drawColumnButtons();
   log('시뮬레이션 준비 완료');
+
+  // ── Reports (computed and generated by B's sim/reports) ───────────
+  function reportSection() {
+    let reportType = 'log';
+    let reportFloor = 1;
+    let report = null;
+    let busy = false;
+    const typeSelect = h(
+      'select',
+      {
+        'aria-label': '보고서 종류',
+        onchange: (e) => {
+          reportType = e.target.value;
+          update();
+        },
+      },
+      Object.values(REPORTS).map((r) => h('option', { value: r.id }, r.label)),
+    );
+    const floorSelect = h(
+      'select',
+      { 'aria-label': '분석할 층', onchange: (e) => (reportFloor = Number(e.target.value)) },
+      Array.from({ length: floors }, (_, i) =>
+        h('option', { value: i + 1 }, `${i + 1}층 기둥 · 벽`),
+      ),
+    );
+    const floorField = h('label', { class: 'field' }, h('span', {}, '분석할 층'), floorSelect);
+    const description = h('p', { class: 'hint' });
+    const status = h('p', { class: 'hint report-status' });
+    const makeButton = h('button', { class: 'btn primary', onclick: make }, '보고서 만들기');
+    const htmlButton = h(
+      'button',
+      {
+        class: 'btn',
+        onclick: () => save(`${report.baseName}.html`, report.html, 'text/html'),
+      },
+      '보고서 (.html)',
+    );
+    const csvButton = h(
+      'button',
+      {
+        class: 'btn',
+        onclick: () => save(`${report.baseName}.csv`, report.csv, 'text/csv'),
+      },
+      '원자료 (.csv)',
+    );
+    const openButton = h(
+      'button',
+      { class: 'btn', onclick: () => openHtml(report.html) },
+      '새 창에서 보기 · PDF',
+    );
+    const downloads = h(
+      'div',
+      { class: 'row report-downloads' },
+      htmlButton,
+      csvButton,
+      openButton,
+    );
+
+    async function save(name, text, mime) {
+      const result = await downloadText(name, text, mime);
+      if (result === 'failed') status.textContent = '내려받기를 할 수 없는 환경입니다.';
+      else if (result === 'declined') status.textContent = '내려받기를 취소했습니다.';
+    }
+
+    function update() {
+      const info = REPORTS[reportType];
+      description.textContent = info.description;
+      floorField.hidden = !info.needsFloor;
+      makeButton.disabled = busy;
+      downloads.hidden = !report || busy;
+      openButton.hidden = !canOpenWindow();
+    }
+
+    async function make() {
+      busy = true;
+      report = null;
+      // pause the on-screen simulation while computing (faster; restored afterwards)
+      const wasPaused = store.get().paused;
+      store.set({ paused: true });
+      status.textContent = '준비 중…';
+      update();
+      try {
+        // the log report reads the current simulation; the others build fresh buildings with the same spec (the view is untouched)
+        report = await buildReport(reportType, {
+          spec: store.get().spec,
+          sim: ctx.getSim?.(),
+          parts: ctx.getParts(),
+          floor: reportFloor,
+          onProgress: (done, total, text) => {
+            status.textContent = `${Math.round((done / total) * 100)}% · ${text}`;
+          },
+        });
+        status.textContent = `완료: ${report.title} — 아래에서 내려받으세요.`;
+      } catch (error) {
+        console.error(error);
+        status.textContent = `실패: ${error.message}`;
+      }
+      busy = false;
+      store.set({ paused: wasPaused });
+      update();
+    }
+
+    update();
+    return h(
+      'section',
+      { class: 'group' },
+      h('h2', {}, '보고서'),
+      h('label', { class: 'field' }, h('span', {}, '종류'), typeSelect),
+      floorField,
+      description,
+      makeButton,
+      status,
+      downloads,
+    );
+  }
 
   return {
     refresh(state, prev) {

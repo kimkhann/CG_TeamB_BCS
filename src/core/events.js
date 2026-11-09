@@ -26,7 +26,8 @@ export const EVENTS = {
   PART_SETTLED: 'part:settled',
   /** 새 부재(조각)가 생김. payload: { part } — 렌더러가 메시를 만들어야 함 */
   PART_ADDED: 'part:added',
-  /** 충돌 · 폭발 등 충격 지점. payload: { position:[x,y,z], energy:number, kind:'impact'|'explosion'|'collision'|'fire', radius?:number } */
+  /** 충돌 · 폭발 등 충격 지점. payload: { position:[x,y,z], energy:number, kind:'impact'|'explosion'|'collision'|'fire'|'glass', radius?:number }
+   *  glass: the moment glass shatters (added in stage B) — a renderer that does not know it may fall back to dust */
   IMPACT: 'impact',
   /** 모든 움직임이 멈춤. payload: SimResults */
   SIM_FINISHED: 'sim:finished',

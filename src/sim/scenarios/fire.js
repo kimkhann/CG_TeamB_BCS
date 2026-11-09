@@ -1,19 +1,25 @@
 /**
- * [B · 시뮬레이션] 화재 — 중심 주변 부재가 시간이 지날수록 약해짐
+ * [B · Simulation] Fire — parts around the center weaken over time
  *
- * 중심: 부재 또는 위치 대상, 반경: 위치 대상의 radius, 없으면 3m. 최대 8초.
- * 🔧 임시 버전(베이스): 내화성에 따라 체력을 천천히 깎습니다.
- * TODO(B): 불이 번지는 범위 확대, 재료별 차이 강화
+ * Size: standard fire (ISO 834) duration t minutes (sim/scenarioScale.js), played back in 8 s.
+ *   part fire rating t_R = 10 min / (1 − fireResistance)  (data/materialPhysics.js)
+ *   damage = t / t_R × (1 − distance/radius)  → at the center a part fails after burning for its rating
+ *   (no strength multiplier — the fire rating already captures the material difference)
+ * Center: part or area target; radius: the area target's radius, otherwise 3 m.
+ * TODO(B): fire spread
  */
 
 import { EVENTS } from '../../core/events.js';
 import { materialPhysics } from '../../data/materialPhysics.js';
+import { FIRE_PLAY_SECONDS, effectEnergy, scenarioValue } from '../scenarioScale.js';
 
-export function runFire(ctx, { target, intensity }) {
-  const { center, radius: areaRadius } = ctx.resolveTarget(target);
+export function runFire(ctx, scenario) {
+  const { center, radius: areaRadius } = ctx.resolveTarget(scenario.target);
+  const minutes = scenarioValue(scenario);
+  const energy = effectEnergy('fire', minutes);
   if (!center) return;
   const radius = areaRadius ?? 3;
-  const duration = 8;
+  const duration = FIRE_PLAY_SECONDS;
   let elapsed = 0;
   let flicker = 0;
 
@@ -22,11 +28,12 @@ export function runFire(ctx, { target, intensity }) {
     flicker += dt;
     if (flicker > 0.5) {
       flicker = 0;
-      ctx.emit(EVENTS.IMPACT, { position: center, energy: intensity, kind: 'fire', radius });
+      ctx.emit(EVENTS.IMPACT, { position: center, energy, kind: 'fire', radius });
     }
     for (const { part, distance } of ctx.partsWithin(center, radius)) {
       const resistance = materialPhysics[part.material]?.fireResistance ?? 0.5;
-      ctx.damage(part, dt * 0.25 * intensity * (1 - resistance) * (1 - distance / radius));
+      const fireRating = 10 / Math.max(0.01, 1 - resistance); // fire rating (min)
+      ctx.damageRaw(part, (dt / duration) * (minutes / fireRating) * (1 - distance / radius));
     }
     return elapsed >= duration;
   });

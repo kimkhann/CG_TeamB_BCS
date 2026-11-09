@@ -1,16 +1,16 @@
 /**
- * [B · 시뮬레이션] 구조 판단 — "이 부재가 아직 받쳐지고 있는가"
+ * [B · Simulation] Support check — "is this part still supported?"
  *
- * 🔧 임시 버전(베이스): 프로포절 데모의 규칙을 일반화한 것
- *   - 받쳐주는 부재(supportedBy) 중 살아 있는 비율이 절반을 넘어야 버팀
- *   - 'ground'(땅)는 항상 살아 있는 지지대로 셈
- *   - 예) 보는 양 끝 기둥 2개 모두 필요, 바닥판 조각과 벽 패널은 4개 중 3개 이상 필요
- *   - 하중 경로는 build/frame.js 맨 위 주석 참고 (바닥판 → 보 → 기둥 → 아래층 기둥 → 땅)
- * TODO(B): 하중 계산(부재마다 받는 무게)과 재분배, 재료 강도 반영,
- *          떨어진 부재의 무게로 아래층이 부서지는 처리
+ * Rule (generalized from the proposal demo):
+ *   - a part stands only if more than half of its supporters (supportedBy) are alive
+ *   - 'ground' always counts as an alive supporter
+ *   - e.g. a beam needs both end columns; slab pieces and wall panels need 3 of 4
+ *   - load path: see the header comment of build/frame.js (slab → beam → column → column below → ground)
+ * Plus lateral bracing for stacked columns (isLaterallyStable).
+ * Weight-driven damage to lower floors lives in impact.js / simulation.js.
  */
 
-/** 부재가 하중을 전달할 수 있는 상태인지 */
+/** Whether a part can still carry load */
 export function isAlive(part) {
   return part.state === 'intact' || part.state === 'damaged';
 }
@@ -35,20 +35,55 @@ export function isSupported(part, byId) {
 }
 
 /**
- * 받쳐지지 않는 부재를 모두 찾습니다. (한 번 무너지면 그 위가 연달아 무너지므로 반복)
+ * part id → parts it supports (the reverse of supportedBy)
+ * @param {import('../core/types.js').Part[]} parts
+ */
+export function buildDependents(parts) {
+  const map = new Map();
+  for (const part of parts) {
+    for (const id of part.supportedBy) {
+      if (!map.has(id)) map.set(id, []);
+      map.get(id).push(part);
+    }
+  }
+  return map;
+}
+
+/** Whether any beam, slab or wall bracing this column end (joint) is still alive */
+function bracedAt(columnId, dependents) {
+  return (dependents.get(columnId) ?? []).some((p) => p.kind !== 'column' && isAlive(p));
+}
+
+/**
+ * Lateral bracing — a column standing on another column topples when it loses
+ * both its top end (beams/slabs it supports) and its bottom joint (beams/slabs the column below supports):
+ * nothing holds it sideways (slenderness: a column free at both ends has an unbounded buckling length).
+ * A ground-floor column is fixed to its foundation, so it can stand alone.
+ */
+export function isLaterallyStable(part, byId, dependents) {
+  if (part.kind !== 'column' || !dependents) return true;
+  const below = part.supportedBy.filter((id) => byId.get(id)?.kind === 'column');
+  if (below.length === 0) return true; // column on the ground or on a beam
+  if (bracedAt(part.id, dependents)) return true;
+  return below.some((id) => bracedAt(id, dependents));
+}
+
+/**
+ * Finds every unsupported part. (repeats, because one collapse makes the parts above collapse in turn)
  * @param {import('../core/types.js').Part[]} parts
  * @param {Map<string, import('../core/types.js').Part>} byId
- * @param {(part:import('../core/types.js').Part)=>void} onUnsupported  찾을 때마다 호출
+ * @param {(part:import('../core/types.js').Part)=>void} onUnsupported  called for each one found
+ * @param {Map<string, import('../core/types.js').Part[]>} [dependents]  when given, lateral bracing is checked too
  */
-export function propagateSupport(parts, byId, onUnsupported) {
+export function propagateSupport(parts, byId, onUnsupported, dependents) {
   let changed = true;
   let guard = 0;
   while (changed && guard++ < 100) {
     changed = false;
     for (const part of parts) {
       if (!isAlive(part)) continue;
-      if (!isSupported(part, byId)) {
-        onUnsupported(part); // 이 안에서 part.state 가 'falling' 으로 바뀌어야 함
+      if (!isSupported(part, byId) || !isLaterallyStable(part, byId, dependents)) {
+        onUnsupported(part); // must change part.state to 'falling' inside
         changed = true;
       }
     }

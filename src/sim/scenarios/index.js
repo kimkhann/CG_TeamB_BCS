@@ -1,15 +1,15 @@
 /**
- * [B · 시뮬레이션] 시나리오 목록
+ * [B · Simulation] Scenario registry
  *
- * 각 시나리오는 (ctx, scenario) => void 함수입니다.
- * scenario.target 은 { kind:'part', partId } 또는 { kind:'area', position, radius } 입니다.
+ * Each scenario is a (ctx, scenario) => void function.
+ * scenario.target is { kind:'part', partId } or { kind:'area', position, radius }; the size is scenario.value (sim/scenarioScale.js).
  *
- * ctx 에서 쓸 수 있는 것
+ * Available on ctx
  *   parts, byId, random, emit, time, isAlive
- *   damage(part, amount)              피해 (재료 강도로 나눠 적용)
- *   applyImpulse(part, [x,y,z])       떨어지는 부재 밀기
- *   updateSupports()                  받쳐지지 않는 부재 떨어뜨리기
- *   addOngoing(fn)                    시간에 따라 계속 작용하는 효과
+ *   damage(part, amount)              damage (divided by material strength) · damageRaw(part, amount) without it
+ *   applyImpulse(part, [x,y,z])       push a falling part
+ *   updateSupports()                  drop unsupported parts
+ *   addOngoing(fn)                    effect that keeps acting over time · startShaking() for the earthquake
  *   resolveTarget(target)             → { center, radius, part }
  *   partsWithin(center, radius)       → [{ part, distance }]
  */

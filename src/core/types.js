@@ -51,7 +51,9 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  * 붕괴 시나리오 실행 요청 (C가 보내고 B가 실행)
  * @typedef {Object} Scenario
  * @property {'impact'|'explosion'|'earthquake'|'fire'} type
- * @property {number} intensity          세기 (0 ~ 1)
+ * @property {number} [value]            scenario size in real units: impact km/h · explosion TNT kg · earthquake magnitude · fire minutes
+ * @property {number} [distanceKm]       earthquake epicentral distance (km)
+ * @property {number} [intensity]        (old format) intensity 0–1 — used only when value is missing
  * @property {ScenarioTarget|null} target 대상 (지진은 null 가능)
  */
 
@@ -65,6 +67,10 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  * @property {string|null} firstFailedPartId 가장 먼저 기능을 잃은 부재
  * @property {number} floorsLost         완전히 무너진 층 수
  * @property {boolean} finished          모든 움직임이 멈췄는지
+ * @property {number|null} collapseTime  seconds from scenario start to the last structural collapse, null if nothing collapsed
+ * @property {{floor:number, ratio:number}[]} floorDamage per-floor damage (0–1, average hp loss of structural parts, collapsed parts count as 1)
+ * @property {{scenario:number, collision:number, debris:number}} damageByCause
+ *           share of damage by cause (sums to 1, all 0 without damage) — direct scenario damage · falling-part impacts · piled debris weight
  */
 
 /**

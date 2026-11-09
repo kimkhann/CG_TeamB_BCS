@@ -263,3 +263,38 @@ select {
   color: #7f90a6;
   font-family: monospace;
 }
+
+/* Scenario size → real-world description (added in stage B) */
+.scale-value {
+  float: right;
+  color: #ff8a80;
+  font-variant-numeric: tabular-nums;
+}
+
+.scale {
+  margin: -4px 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid #ff6b63;
+  background: rgba(255, 107, 99, 0.08);
+  border-radius: 4px;
+}
+
+.scale-headline {
+  display: block;
+  font-size: 13px;
+  color: #f2f5f9;
+}
+
+.scale-detail {
+  margin-top: 4px;
+}
+
+/* Reports (added in stage B) */
+.report-status {
+  min-height: 1em;
+}
+
+.report-downloads {
+  flex-wrap: wrap;
+  gap: 6px;
+}

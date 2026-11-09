@@ -4,6 +4,7 @@
 
 ```md
 ## N단계 · 담당 → 완료 (날짜 시각)
+
 - 완료한 것:
 - 실행 · 확인 방법:
 - 바꾼 약속 (추가한 필드 · 이벤트):
@@ -17,6 +18,7 @@
 ## 0단계 · 베이스 (통합 담당) → 완료 (11/1 일)
 
 ### 완료한 것
+
 - Vite + Three.js 0.180 + cannon-es 0.20 프로젝트, 코드 포맷(Prettier) · 줄바꿈(LF) 규칙
 - 데이터 약속: `core/types.js`, `core/events.js`, `data/ids.js` (설명은 `docs/CONTRACTS.md`)
 - 공용 코어: 이벤트 버스, 상태 저장소, 고정 시간 루프(1/60초), 개발용 URL 옵션
@@ -26,15 +28,18 @@
   - C: 3단계 화면(버튼 · 드롭다운), 부재 클릭 · 마우스 올림 강조, 카메라 회전 · 자동 맞춤, 재생 제어, 결과 숫자
 
 ### 실행 · 확인 방법
+
 ```bash
 npm install
 npm run dev
 ```
+
 - 필로티 빌라 → 다음 → 시뮬레이션 시작 → 1층 기둥 클릭 → 실행을 두 번 누르면 기둥이 부서짐
 - 같은 줄의 1층 기둥을 하나 더 부수면 그 위가 연쇄로 무너짐
 - 바로 시뮬레이션 화면: `/?type=piloti&floors=4&screen=simulate&debug=1`
 
 ### 다음 사람(A)이 알아야 할 것
+
 - 수정 범위: `src/build/`, `src/render/`, `src/data/materialLooks.js`, `public/textures/`
 - 형태별 파일(`build/types/*.js`)에 `TODO(A)` 가 적혀 있습니다. 지금은 네 형태 모두 `build/frame.js` 의 격자 골조를 씁니다.
 - 부재는 반드시 `createPart()` 로 만들고, `supportedBy` 를 정확히 채워야 B의 붕괴 판단이 동작합니다. (`frame.js` 맨 위 주석에 규칙 정리)
@@ -42,14 +47,16 @@ npm run dev
 - 렌더러는 부재 하나당 메시 하나(재질도 각각)인 단순한 방식이라, 부재가 많으면 느립니다 → `InstancedMesh` 로 개선 권장.
 
 ### 알려진 문제 · 못 한 것
+
 - **성능**: 아파트 10층(약 560개 부재)을 크게 무너뜨리면 물리 계산이 한 단계에 15ms 정도 걸려 느려짐 → B 단계에서 최적화 필요 (`npm run bench -- apartment 10` 으로 측정)
 - 떨어지는 부재가 서 있는 부재를 부숴 내리는 "무게에 따른 파괴"는 아직 없음 (B의 `simulation.js` TODO)
 - 지진은 실제로 땅이 흔들리지 않고 1층에 무작위 피해만 줌, 화재 불꽃 표현 없음
 - 화면은 기능 확인용 최소 디자인
 
 ### 스크린샷
-| 형태 선택 | 시뮬레이션 | 붕괴 |
-|---|---|---|
+
+| 형태 선택                      | 시뮬레이션                       | 붕괴                             |
+| ------------------------------ | -------------------------------- | -------------------------------- |
 | ![](handoff/stage0-select.png) | ![](handoff/stage0-simulate.png) | ![](handoff/stage0-collapse.png) |
 
 ---
@@ -59,6 +66,7 @@ npm run dev
 첫 실행 후 나온 문제("부품이 너무 크다", "위층 천장이 안 무너진다", "프로포절 데모보다 기능이 적다")를 반영했습니다.
 
 ### 완료한 것
+
 - **부재 세분화**: 바닥판은 한 칸을 2×2 조각, 바깥 벽은 한 면을 가로 2 × 세로 2 패널, 창문은 위쪽 패널마다
 - **하중 경로 재정의**: 바닥판 조각 → 보 → 기둥 → 아래층 기둥 → 땅. 기둥이 무너지면 거기 걸린 보와 그 위 바닥판이 따라 떨어지고, 이웃 칸은 버팀 (규칙은 `docs/CONTRACTS.md` 2장)
 - **위치 · 범위 대상**: 시나리오 대상이 `{ kind:'part' }` 또는 `{ kind:'area', position, radius }`. 건물이 멀쩡해도 단면 보기로 내부를 보고 바닥을 클릭해 폭발 · 충격 · 화재 위치를 지정
@@ -69,11 +77,13 @@ npm run dev
 - 아파트 최대 8층, L자형 최대 5층으로 조정 (성능)
 
 ### 실행 · 확인 방법
+
 - 단독주택 3층 → 시뮬레이션 → **▷ 선택한 층 붕괴 시연**: A1 · B1 기둥이 차례로 부서지고 그 칸의 보 · 바닥판 · 벽이 떨어짐
 - **위치 · 범위** → 층 `2층 내부` → 바닥 클릭 → 시나리오 `폭발` → 실행: 2층 내부에서 폭발
 - 화면 없이 물리 속도 측정: `npm run bench -- piloti 5`
 
 ### 다음 사람(A)이 알아야 할 것
+
 - 렌더러는 이제 **재료별 InstancedMesh** 입니다 (`render/partMeshes.js`). 색은 인스턴스 색(`setColorAt`)으로 바뀌고, 숨김은 크기 0으로 처리합니다.
   텍스처를 붙일 때는 재료별 `MeshStandardMaterial` 에 `map` 을 넣으면 되고, 부재마다 크기가 달라 텍스처가 늘어나 보이면 `onBeforeCompile` 로 월드 좌표 기반 UV(삼면 투영)를 쓰는 걸 추천합니다.
 - 형태별 모양은 `build/types/*.js`. 지금은 모두 `build/frame.js` 의 격자 골조입니다. 박공지붕 같은 기울어진 부재는 `quaternion` 으로 회전을 넣고, **supportedBy 를 반드시 채워 주세요**.
@@ -81,17 +91,71 @@ npm run dev
 - 대상 표시(반투명 구)는 `scene.js` 의 `setTargetMarker` 입니다. 더 예쁘게 다듬어도 됩니다.
 
 ### 다음다음 사람(B)을 위한 메모
+
 - **천장이 휘는 표현**: 강체 상자는 휘지 않으므로, 바닥판 조각들을 cannon-es 의 `HingeConstraint`(또는 `PointToPointConstraint`)로 서로 이어 두고,
   지지를 잃은 조각만 움직이게 하면 한쪽이 처지며 꺾이는 모습이 나옵니다. 일정 힘 이상이면 연결을 끊어(`world.removeConstraint`) 떨어지게 하세요.
 - **무게에 따른 아래층 파괴**: `simulation.js` 의 TODO 위치. 떨어지는 부재의 `collide` 이벤트에서 충격 속도 × 질량으로 아래 부재에 `ctx.damage()`.
 - **성능**: 아파트 8층에서 크게 무너지면 한 단계 20ms 이상 (`npm run bench -- apartment 8`). 멈춘 잔해 정적 전환, 작은 조각은 물리 없이, 물리 30Hz 등 검토.
 
 ### 알려진 문제 · 못 한 것
+
 - 지진은 아직 땅이 흔들리지 않음, 화재 불꽃 표현 없음 (B · A)
 - 재질은 단색, 형태별 실제 모양 없음 (A)
 - 화면 디자인은 기능 위주 (C)
 
 ### 스크린샷
-| 시작 화면 | 붕괴 시연 | 위치 지정 (2층 단면) | 2층 내부 폭발 |
-|---|---|---|---|
+
+| 시작 화면                         | 붕괴 시연                     | 위치 지정 (2층 단면)               | 2층 내부 폭발                           |
+| --------------------------------- | ----------------------------- | ---------------------------------- | --------------------------------------- |
 | ![](handoff/stage0b-simulate.png) | ![](handoff/stage0b-demo.png) | ![](handoff/stage0b-area-pick.png) | ![](handoff/stage0b-area-explosion.png) |
+
+---
+
+## Stage 2 · B (Simulation) → done (Mon 11/9)
+
+### Done
+
+- **Weight-driven damage**: falling parts damage what they hit by impact energy (½mv², restitution, material energy capacity, hit location); piled debris overloads slabs (capacity from the KDS 1.2D + 1.6L combination)
+- **A's handed-over fixes**: rotation-aware fragment placement and distance checks; support re-check on the final step of fire/earthquake
+- **Glass shatter**: glass breaks instantly without rigid bodies and emits `IMPACT kind:'glass'` (piloti 5F: 24.7 → 10.0 ms/step)
+- **Material calibration**: density, fragment count and fire resistance follow real-world references (strength values unchanged)
+- **Earthquake**: the ground and building really shake (more with height); story damage from equivalent static story shear (story mass × height); the piloti ground floor behaves as a soft story; parts return to place afterwards
+- **Free-standing columns fixed**: stacked columns that lose all lateral bracing topple
+- **Real-world scenario units**: impact km/h · explosion TNT kg · earthquake magnitude + epicentral distance · fire minutes (ISO 834)
+- **New results**: `collapseTime`, `floorDamage`, `damageByCause`
+- **Three reports** (no server): ① simulation log analysis ② design alternative comparison ③ key member map → `.html` (print → PDF) + `.csv`
+
+Formulas, sources and measurements: `src/sim/B_NOTES.md`.
+
+### How to run and check
+
+- Piloti 5F → Simulate → Earthquake M 6.5, 10 km: the building sways, glass breaks, ground-floor columns fail and the floors above drop
+- RC apartment → Earthquake M 6.5, 10 km: sways but barely damaged
+- Reports panel → ① right after a run / ② ~1–2 min / ③ pick a floor, ~1 min
+- Headless: `node scripts/compare-quake.mjs piloti 5 1`, `node scripts/make-report.mjs compare piloti 5`
+
+### Contract changes (added fields and events)
+
+- `Scenario`: `value` (real units) and `distanceKm`; old `intensity` still accepted (`docs/CONTRACTS.md` section 3)
+- `SimResults`: `collapseTime`, `floorDamage`, `damageByCause` (section 4, `core/types.js`)
+- `IMPACT` kind `'glass'` (`core/events.js`)
+- `sim.getHistory()`, `sim.removeParts(ids)`, `sim/reports/index.js`; `mountUI` now receives `getSim` (`main.js`)
+- `materialPhysics`: `shearColumn`, `shearWall` (earthquake)
+
+### What the next person should know
+
+- **C**: the size sliders and the report panel were added to `ui/screens/simulateScreen.js` and `styles/ui.css` functionally — restyle them freely. Ranges and texts come from `sim/scenarioScale.js`; reports from `sim/reports/index.js` (`REPORTS`, `buildReport`, `downloadText`, `openHtml`). Please also show the three new result fields on the results screen. During an earthquake, standing parts' `position` changes every step
+- **A**: draw glass shards for `IMPACT kind:'glass'` (dust for now) and consider camera shake during an earthquake (8 s after `SCENARIO_RUN` with `type:'earthquake'`)
+- User-facing text (UI, reports) is Korean; code, comments, docs, commits and PRs are English
+
+### Known issues / not done
+
+- Slab bending is future work; the earthquake model ignores torsion (L-shape)
+- A full apartment 8F collapse is still heavy (avg 44 ms/step) — demo at 5 floors or fewer
+- Walls carry no vertical load in this model, so the key member map rates walls by seismic contribution only
+
+### Screenshot
+
+| Piloti 5F earthquake: sway → glass breaks · ground-floor columns damaged → columns fail |
+| --------------------------------------------------------------------------------------- |
+| ![](handoff/stage2b-earthquake.png)                                                     |

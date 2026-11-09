@@ -1,26 +1,35 @@
 /**
- * [B · 시뮬레이션] 폭발 — 중심에서 반경 안의 부재에 거리에 따라 피해 + 바깥으로 밀어냄
+ * [B · Simulation] Explosion — damages parts within the radius by distance and pushes them outward
  *
- * 중심: 부재 대상이면 그 부재 위치, 위치 대상이면 그 위치 (건물 내부의 빈 공간도 가능)
- * 반경: 위치 대상의 radius, 없으면 2 + 6 × 세기
+ * Center: the part's position for a part target, the given position for an area target (empty interior space is fine)
+ * Size: TNT equivalent (kg, sim/scenarioScale.js) → damage radius R = 7 · W^(1/3) m, damage factor = (R − 2) / 6
+ * Radius: the area target's radius, otherwise R
  *
- * 🔧 임시 버전(베이스)
- * TODO(B): 같은 층 우선, 벽 뒤 차폐, 폭풍 압력 표현
+ * Damage magnitude is still the base-stage rule.
+ * TODO(B): same-floor priority, shielding behind walls, blast pressure
  */
 
 import { EVENTS } from '../../core/events.js';
+import { blast, effectEnergy, scenarioValue } from '../scenarioScale.js';
 
-export function runExplosion(ctx, { target, intensity }) {
-  const { center, radius: areaRadius } = ctx.resolveTarget(target);
+export function runExplosion(ctx, scenario) {
+  const { center, radius: areaRadius } = ctx.resolveTarget(scenario.target);
   if (!center) return;
-  const radius = areaRadius ?? 2 + 6 * intensity;
+  const tnt = scenarioValue(scenario);
+  const { radius: blastRadius, power } = blast(tnt);
+  const radius = areaRadius ?? blastRadius;
 
   for (const { part, distance } of ctx.partsWithin(center, radius)) {
-    ctx.damage(part, (1 - distance / radius) * (0.8 + 1.2 * intensity));
+    ctx.damage(part, (1 - distance / radius) * (0.8 + 1.2 * power));
   }
-  ctx.emit(EVENTS.IMPACT, { position: center, energy: intensity, kind: 'explosion', radius });
+  ctx.emit(EVENTS.IMPACT, {
+    position: center,
+    energy: effectEnergy('explosion', tnt),
+    kind: 'explosion',
+    radius,
+  });
 
-  // 떨어지기 시작한 부재와 조각을 바깥으로 밀어냄
+  // push parts and fragments that started falling outward
   ctx.updateSupports();
   for (const part of ctx.parts) {
     if (part.state !== 'falling' || !part.sim.body) continue;
@@ -31,7 +40,7 @@ export function runExplosion(ctx, { target, intensity }) {
     ];
     const len = Math.hypot(...dir) || 1;
     if (len > radius) continue;
-    const power = (1 - len / radius) * 6 * intensity * part.sim.body.mass;
+    const power = (1 - len / radius) * 6 * power * part.sim.body.mass;
     ctx.applyImpulse(
       part,
       dir.map((v) => (v / len) * power),

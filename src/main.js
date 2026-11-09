@@ -35,7 +35,7 @@ if (dev.screen) store.set({ screen: dev.screen });
 let parts = [];
 
 const renderer = createRenderer(viewportEl);
-const ui = mountUI(panelEl, { renderer, getParts: () => parts });
+const ui = mountUI(panelEl, { renderer, getParts: () => parts, getSim: () => sim });
 /** 시뮬레이션 화면에서만 존재 */
 let sim = null;
 
