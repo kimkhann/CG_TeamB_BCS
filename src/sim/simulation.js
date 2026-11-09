@@ -94,6 +94,20 @@ export function createSimulation(parts, { emit, seed }) {
   let scenarioStart = null;
   let lastCollapseAt = null;
   const damageByCause = { scenario: 0, collision: 0, debris: 0 };
+  /**
+   * 이벤트 기록 (보고서 · 로그 분석용, sim/reports/logAnalysis.js)
+   *   events : { t, type:'scenario'|'damaged'|'failed'|'detached'|'shattered', partId?, cause?, trigger?, scenario? }
+   *            damaged 는 처음 손상될 때만, detached 의 trigger 는 이 붕괴를 일으킨 직전 파괴 부재들
+   *   samples: 0.5초마다 { t, collapsed, falling, damaged } (구조 부재 수)
+   */
+  const history = { events: [], samples: [] };
+  /** 마지막 지지 판단 이후 기능을 잃은 부재 (연쇄 붕괴의 원인 추적) */
+  let pendingTriggers = [];
+  let sampleTimer = 0;
+  let lastCause = 'scenario';
+  const record = (type, part, extra) =>
+    history.events.push({ t: time, type, partId: part?.id, ...extra });
+
   /** 지진으로 흔들리는 중인지 (서 있는 부재가 KINEMATIC) */
   let shakingActive = false;
   let scenarioActive = false;
@@ -150,7 +164,9 @@ export function createSimulation(parts, { emit, seed }) {
   function loseHp(part, amount, cause = 'scenario') {
     if (!part || !isAlive(part) || amount <= 0) return;
     damageByCause[cause] += Math.min(part.hp, amount);
+    if (part.state === 'intact') record('damaged', part, { cause });
     part.hp = Math.max(0, part.hp - amount);
+    lastCause = cause;
     if (part.hp <= 0) fail(part);
     else part.state = 'damaged';
     emit(EVENTS.PART_DAMAGED, { partId: part.id, hp: part.hp });
@@ -265,7 +281,7 @@ export function createSimulation(parts, { emit, seed }) {
   /** 지지를 잃은 부재를 떨어뜨립니다. */
   function detach(part) {
     if (isGlass(part)) {
-      shatter(part, 0.4); // 유리는 통째로 떨어지지 않고 지지를 잃는 순간 깨짐
+      shatter(part, 0.4, 'support'); // 유리는 통째로 떨어지지 않고 지지를 잃는 순간 깨짐
       return;
     }
     part.state = 'falling';
@@ -294,6 +310,7 @@ export function createSimulation(parts, { emit, seed }) {
         random() < 0.5 ? -tip : tip,
       );
     }
+    record('detached', part, { trigger: pendingTriggers.slice(0, 4) });
     emit(EVENTS.PART_DETACHED, { partId: part.id });
   }
 
@@ -302,11 +319,12 @@ export function createSimulation(parts, { emit, seed }) {
    * 실제 판유리는 충격이나 지지 상실 시 큰 판으로 떨어지기보다 작은 조각으로 깨지며,
    * 유리 부재(창 · 커튼월 · 발코니 유리)는 건물의 15~20%를 차지해 강체 수를 크게 줄여 줍니다.
    */
-  function shatter(part, energy) {
+  function shatter(part, energy, cause = lastCause) {
     part.state = 'failed';
     if (part.structural) lastCollapseAt = time; // 붕괴 진행 시간은 구조 부재 기준
     part.hp = 0;
     world.removeBody(part.sim.body);
+    record('shattered', part, { cause });
     emit(EVENTS.PART_FAILED, { partId: part.id });
     if (glassBudget > 0) {
       glassBudget--;
@@ -329,6 +347,8 @@ export function createSimulation(parts, { emit, seed }) {
     if (part.structural) lastCollapseAt = time; // 붕괴 진행 시간은 구조 부재 기준
     if (part.sim.body) world.removeBody(part.sim.body);
     if (!firstFailedPartId && part.structural) firstFailedPartId = part.id;
+    record('failed', part, { cause: lastCause });
+    if (part.structural) pendingTriggers.push(part.id);
     emit(EVENTS.PART_FAILED, { partId: part.id });
 
     const count = Math.max(1, materialPhysics[part.material]?.fragments ?? 2);
@@ -467,6 +487,7 @@ export function createSimulation(parts, { emit, seed }) {
     /** 피해를 준 뒤 반드시 호출: 받쳐지지 않는 부재를 떨어뜨립니다. */
     updateSupports() {
       propagateSupport(parts, byId, detach, dependents);
+      pendingTriggers = [];
     },
 
     /** 시간이 흐르며 작용하는 효과를 등록합니다. fn(dt)가 true를 반환하면 끝남. */
@@ -512,6 +533,16 @@ export function createSimulation(parts, { emit, seed }) {
       scenarioActive = true;
       finishedEmitted = false;
       if (scenarioStart === null) scenarioStart = time;
+      record('scenario', null, {
+        scenario: {
+          type: scenario.type,
+          value: scenario.value,
+          distanceKm: scenario.distanceKm,
+          intensity: scenario.intensity,
+          target: scenario.target ?? null,
+        },
+      });
+      lastCause = 'scenario';
       run(ctx, scenario);
       ctx.updateSupports();
     },
@@ -599,6 +630,21 @@ export function createSimulation(parts, { emit, seed }) {
       }
       if (damaged) ctx.updateSupports();
 
+      sampleTimer += dt;
+      if (scenarioActive && sampleTimer >= 0.5) {
+        sampleTimer = 0;
+        let collapsed = 0;
+        let falling = 0;
+        let hurt = 0;
+        for (const p of parts) {
+          if (!p.structural || p.kind === 'fragment') continue;
+          if (p.state === 'damaged') hurt++;
+          else if (p.state !== 'intact') collapsed++;
+          if (p.state === 'falling') falling++;
+        }
+        history.samples.push({ t: time, collapsed, falling, damaged: hurt });
+      }
+
       if (scenarioActive && !finishedEmitted && !ongoing.length) {
         const moving = parts.some((p) => p.state === 'falling');
         if (!moving) {
@@ -606,6 +652,33 @@ export function createSimulation(parts, { emit, seed }) {
           emit(EVENTS.SIM_FINISHED, this.getResults());
         }
       }
+    },
+
+    /**
+     * 부재를 없앤 것으로 처리 (핵심 부재 분석: "이 부재가 없으면 어떻게 되나")
+     * 조각을 만들지 않고 강체를 지운 뒤 지지 판단을 다시 합니다.
+     * @param {string[]} ids
+     */
+    removeParts(ids) {
+      scenarioActive = true;
+      finishedEmitted = false;
+      if (scenarioStart === null) scenarioStart = time;
+      for (const id of ids) {
+        const part = byId.get(id);
+        if (!part || !isAlive(part)) continue;
+        part.state = 'failed';
+        part.hp = 0;
+        if (part.sim?.body) world.removeBody(part.sim.body);
+        record('failed', part, { cause: 'removed' });
+        pendingTriggers.push(part.id);
+        emit(EVENTS.PART_FAILED, { partId: part.id });
+      }
+      ctx.updateSupports();
+    },
+
+    /** 이벤트 기록 (보고서용, 읽기 전용) */
+    getHistory() {
+      return history;
     },
 
     getResults() {

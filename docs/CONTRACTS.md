@@ -159,25 +159,29 @@ B가 부재를 쪼개면 `kind: 'fragment'` 부재를 **같은 parts 배열에 �
 
 ## 5. 공개 함수
 
-| 모듈       | 함수                                                       | 설명                                                           |
-| ---------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
-| build (A)  | `makeBuilding(spec) → Part[]`                              | 설정으로 부재 목록 생성                                        |
-| render (A) | `createRenderer(container) → Renderer`                     |                                                                |
-|            | `renderer.setParts(parts)`                                 | 건물을 새로 그림                                               |
-|            | `renderer.syncParts(parts)`                                | 매 프레임 위치 · 상태 반영                                     |
-|            | `renderer.setSelected(id)` / `setHovered(id)`              | 강조 표시                                                      |
-|            | `renderer.setPartFilter(fn \| null)`                       | 보일 부재 고르기 (외벽 숨기기, 단면 보기)                      |
-|            | `renderer.raycast({x, y}) → id \| null`                    | 화면 좌표(-1~1) → 보이는 부재 id                               |
-|            | `renderer.raycastPoint({x, y}, planeY?) → [x,y,z] \| null` | 화면 좌표 → 3D 위치 (planeY를 주면 그 높이 수평면과 만나는 점) |
-|            | `renderer.setTargetMarker({position, radius} \| null)`     | 위치 · 범위 대상 표시                                          |
-|            | `renderer.getBounds() → THREE.Box3`                        | 서 있는 부재의 경계 상자                                       |
-|            | `renderer.camera`, `renderer.domElement`                   | 카메라 조작용 (C)                                              |
-| sim (B)    | `createSimulation(parts, { emit }) → Simulation`           |                                                                |
-|            | `sim.runScenario(scenario)`                                | 시나리오 실행                                                  |
-|            | `sim.step(dt)`                                             | 1/60초 진행                                                    |
-|            | `sim.getResults() → SimResults`                            | 결과                                                           |
-|            | `sim.dispose()`                                            | 정리                                                           |
-| ui (C)     | `mountUI(root, { renderer, getParts }) → { update(dt) }`   | `getParts()` 는 읽기 전용                                      |
+| 모듈            | 함수                                                                    | 설명                                                           |
+| --------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| build (A)       | `makeBuilding(spec) → Part[]`                                           | 설정으로 부재 목록 생성                                        |
+| render (A)      | `createRenderer(container) → Renderer`                                  |                                                                |
+|                 | `renderer.setParts(parts)`                                              | 건물을 새로 그림                                               |
+|                 | `renderer.syncParts(parts)`                                             | 매 프레임 위치 · 상태 반영                                     |
+|                 | `renderer.setSelected(id)` / `setHovered(id)`                           | 강조 표시                                                      |
+|                 | `renderer.setPartFilter(fn \| null)`                                    | 보일 부재 고르기 (외벽 숨기기, 단면 보기)                      |
+|                 | `renderer.raycast({x, y}) → id \| null`                                 | 화면 좌표(-1~1) → 보이는 부재 id                               |
+|                 | `renderer.raycastPoint({x, y}, planeY?) → [x,y,z] \| null`              | 화면 좌표 → 3D 위치 (planeY를 주면 그 높이 수평면과 만나는 점) |
+|                 | `renderer.setTargetMarker({position, radius} \| null)`                  | 위치 · 범위 대상 표시                                          |
+|                 | `renderer.getBounds() → THREE.Box3`                                     | 서 있는 부재의 경계 상자                                       |
+|                 | `renderer.camera`, `renderer.domElement`                                | 카메라 조작용 (C)                                              |
+| sim (B)         | `createSimulation(parts, { emit }) → Simulation`                        |                                                                |
+|                 | `sim.runScenario(scenario)`                                             | 시나리오 실행                                                  |
+|                 | `sim.step(dt)`                                                          | 1/60초 진행                                                    |
+|                 | `sim.getResults() → SimResults`                                         | 결과                                                           |
+|                 | `sim.getHistory() → { events, samples }`                                | 이벤트 기록 (보고서용, B 단계 추가)                            |
+|                 | `sim.removeParts(ids)`                                                  | 부재를 없앤 것으로 처리 (핵심 부재 분석용)                     |
+|                 | `sim.dispose()`                                                         | 정리                                                           |
+| sim/reports (B) | `REPORTS`, `buildReport(type, { spec, sim, parts, floor, onProgress })` | 보고서 3종 → `{ title, html, csv, baseName }` (서버 없음)      |
+|                 | `downloadText(name, text, mime)`, `openHtml(html)`                      | 내려받기 · 새 창                                               |
+| ui (C)          | `mountUI(root, { renderer, getParts, getSim }) → { update(dt) }`        | `getParts()` · `getSim()` 은 읽기 전용 (getSim: 보고서용)      |
 
 ## 6. 상태 저장소 (store) — "지금의 값"
 

@@ -288,3 +288,13 @@ select {
 .scale-detail {
   margin-top: 4px;
 }
+
+/* 보고서 (B 단계 추가) */
+.report-status {
+  min-height: 1em;
+}
+
+.report-downloads {
+  flex-wrap: wrap;
+  gap: 6px;
+}
