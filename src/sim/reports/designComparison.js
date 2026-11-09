@@ -1,15 +1,15 @@
 /**
- * [B · 보고서 ②] 설계안 비교 리포트
+ * [B · Report ②] Design alternative comparison
  *
- * 현재 건물과 자동으로 만든 대안을 같은 조건으로 시험해 비교합니다.
- *   대안: 재료 3종(철근콘크리트 · 철골 + 패널 · 목조 + 벽돌) 중 현재와 다른 것,
- *         필로티라면 "1층에도 벽을 둔 안"(연약층 보강)
- *   시험
- *     (1) 버티는 최대 규모: 진앙 10 km 지진의 규모를 이분 탐색 (4.0 ~ 9.0, 0.1 단위)
- *         붕괴 판정 = 층 하나 이상 무너짐 또는 구조 부재 20% 이상 붕괴 (지진이 끝난 뒤 1초까지)
- *     (2) 기준 지진: 규모 6.5 · 진앙 10 km — 층별 피해 · 원인별 피해
- *     (3) 1층 중앙 화재 60분 (반경 4 m) — 무너진 구조 부재 수
- *   모든 시험은 같은 시드로 돌려 다시 만들어도 같은 결과가 나옵니다.
+ * Tests the current building and automatically generated alternatives under the same conditions.
+ *   Alternatives: the material sets (RC · steel + panel · timber + brick) that differ from the current one,
+ *         and for a piloti, "walls on the ground floor too" (soft-story retrofit)
+ *   Tests
+ *     (1) Max magnitude withstood: binary search of the magnitude at 10 km epicentral distance (4.0–9.0, step 0.1)
+ *         collapse = at least one floor lost or ≥ 20% of structural parts collapsed (checked until 1 s after the quake)
+ *     (2) Reference earthquake: M 6.5 at 10 km — per-floor damage and damage by cause
+ *     (3) 60-minute fire at the ground-floor center (radius 4 m) — collapsed structural parts
+ *   Every test uses the same seed, so regenerating gives the same result.
  */
 
 import { BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
@@ -49,7 +49,7 @@ const MATERIAL_SETS = [
   { name: '목조 + 벽돌', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
 ];
 
-/** 필로티의 1층에도 바깥 벽을 둔 대안 (A의 필로티 생성 방식과 같고 벽 조건만 다름) */
+/** Piloti alternative with outer walls on the ground floor (same as A's piloti builder except the wall condition) */
 function pilotiWithGroundWalls(spec) {
   const parts = buildGridFrame({
     spec,
@@ -71,7 +71,7 @@ const sameMaterials = (a, b) => ['frame', 'slab', 'wall'].every((k) => a[k] === 
 const materialText = (m) =>
   ['frame', 'wall', 'slab'].map((k) => MATERIALS[m[k]]?.label ?? m[k]).join(' · ');
 
-/** 비교할 안 목록 */
+/** Alternatives to compare */
 export function designVariants(rawSpec) {
   const spec = normalizeSpec(rawSpec);
   const variants = [{ name: '현재 설계', spec, build: makeBuilding, current: true }];
@@ -104,12 +104,12 @@ async function quakeCollapses(variant, magnitude) {
   return collapsed(r);
 }
 
-/** 버티는 최대 규모 (진앙 10 km). 범위 밖이면 경계값과 표시 */
+/** Max magnitude withstood (10 km). Returns the bound with a flag when outside the range */
 async function limitMagnitude(variant) {
   if (await quakeCollapses(variant, M_MIN)) return { value: M_MIN, below: true };
   if (!(await quakeCollapses(variant, M_MAX))) return { value: M_MAX, above: true };
-  let lo = M_MIN; // 버팀
-  let hi = M_MAX; // 무너짐
+  let lo = M_MIN; // holds
+  let hi = M_MAX; // collapses
   while (hi - lo > 0.1 + 1e-9) {
     const mid = Math.round(((lo + hi) / 2) * 10) / 10;
     if (await quakeCollapses(variant, mid)) hi = mid;
@@ -142,7 +142,7 @@ async function fireTest(variant) {
 }
 
 /**
- * 비교 실행
+ * Runs the comparison
  * @param {object} spec
  * @param {(done:number, total:number, text:string)=>void} [onProgress]
  */
@@ -319,7 +319,7 @@ export function renderComparisonReport(data) {
   });
 }
 
-/** 10 km에서 설계지진 0.22 g 에 해당하는 규모 */
+/** Magnitude giving the 0.22 g design PGA at 10 km */
 function findDesignMagnitude() {
   let m = 4;
   while (m < 9 && pgaFromMagnitude(m, LIMIT_DISTANCE_KM) < DESIGN_PGA) m += 0.1;

@@ -111,52 +111,51 @@ npm run dev
 
 ---
 
-## 2단계 · B (시뮬레이션) → 완료 (11/9 월)
+## Stage 2 · B (Simulation) → done (Mon 11/9)
 
-### 완료한 것
+### Done
 
-- **B-1 무게에 따른 파괴**: 떨어진 부재의 충돌 에너지(½mv², 반발 계수 · 재료 흡수 능력 · 충돌 위치 반영)와 쌓인 잔해 무게(KDS 하중조합 기준 내력)로 아래 부재가 부서짐
-- **B-2 A가 넘긴 버그**: 기울어진 부재의 조각 위치 · 거리 계산에 회전 반영, 화재 · 지진 마지막 단계 지지 판단 누락 수정
-- **B-3 유리 깨짐**: 유리는 강체 없이 바로 깨짐 + `IMPACT kind:'glass'` → 필로티 5층 24.7 → 10.0 ms/단계
-- **B-4 재료 보정**: 밀도 · 조각 수 · 내화성을 실제 기준으로 (강도 값은 유지)
-- **B-5 지진**: 지면 · 건물이 실제로 흔들림(높이에 비례), 층 질량 × 높이 기반 등가정적 지진력으로 층별 피해, 필로티 1층 연약층 표현, 끝나면 원래 위치로 복구
-- **B-6 결과 값**: `collapseTime`, `floorDamage`, `damageByCause`
+- **Weight-driven damage**: falling parts damage what they hit by impact energy (½mv², restitution, material energy capacity, hit location); piled debris overloads slabs (capacity from the KDS 1.2D + 1.6L combination)
+- **A's handed-over fixes**: rotation-aware fragment placement and distance checks; support re-check on the final step of fire/earthquake
+- **Glass shatter**: glass breaks instantly without rigid bodies and emits `IMPACT kind:'glass'` (piloti 5F: 24.7 → 10.0 ms/step)
+- **Material calibration**: density, fragment count and fire resistance follow real-world references (strength values unchanged)
+- **Earthquake**: the ground and building really shake (more with height); story damage from equivalent static story shear (story mass × height); the piloti ground floor behaves as a soft story; parts return to place afterwards
+- **Free-standing columns fixed**: stacked columns that lose all lateral bracing topple
+- **Real-world scenario units**: impact km/h · explosion TNT kg · earthquake magnitude + epicentral distance · fire minutes (ISO 834)
+- **New results**: `collapseTime`, `floorDamage`, `damageByCause`
+- **Three reports** (no server): ① simulation log analysis ② design alternative comparison ③ key member map → `.html` (print → PDF) + `.csv`
 
-자세한 식 · 근거 · 측정값은 `src/sim/B_NOTES.md`.
+Formulas, sources and measurements: `src/sim/B_NOTES.md`.
 
-### 실행 · 확인 방법
+### How to run and check
 
-- 필로티 5층 → 시뮬레이션 → 지진, 세기 0.7 이상: 건물이 흔들리고 유리가 깨지다가 1층 기둥이 부서지며 내려앉음
-- 철근콘크리트 아파트 8층 → 지진 세기 1: 흔들리지만 거의 버팀
-- 화면 없이: `node scripts/compare-quake.mjs piloti 5 1`, `node scripts/compare-crush.mjs piloti 5 4`
+- Piloti 5F → Simulate → Earthquake M 6.5, 10 km: the building sways, glass breaks, ground-floor columns fail and the floors above drop
+- RC apartment → Earthquake M 6.5, 10 km: sways but barely damaged
+- Reports panel → ① right after a run / ② ~1–2 min / ③ pick a floor, ~1 min
+- Headless: `node scripts/compare-quake.mjs piloti 5 1`, `node scripts/make-report.mjs compare piloti 5`
 
-### 바꾼 약속 (추가한 필드 · 이벤트)
+### Contract changes (added fields and events)
 
-- `SimResults`: `collapseTime`, `floorDamage`, `damageByCause` (`docs/CONTRACTS.md` 4장, `core/types.js`)
-- `IMPACT` 이벤트 kind 에 `'glass'` 추가 (`core/events.js`)
-- `materialPhysics` 에 `shearColumn`, `shearWall` (지진용) 추가
+- `Scenario`: `value` (real units) and `distanceKm`; old `intensity` still accepted (`docs/CONTRACTS.md` section 3)
+- `SimResults`: `collapseTime`, `floorDamage`, `damageByCause` (section 4, `core/types.js`)
+- `IMPACT` kind `'glass'` (`core/events.js`)
+- `sim.getHistory()`, `sim.removeParts(ids)`, `sim/reports/index.js`; `mountUI` now receives `getSim` (`main.js`)
+- `materialPhysics`: `shearColumn`, `shearWall` (earthquake)
 
-### 다음 사람이 알아야 할 것
+### What the next person should know
 
-- **A**: `IMPACT kind:'glass'` 에 유리 파편(반짝이는 작은 판 파티클)을 그려 주면 좋습니다. 지금은 먼지로 대체됩니다. 지진 동안 화면(카메라) 흔들림을 넣으면 더 실감 납니다 — 지진 중인지는 `SCENARIO_RUN` 의 `type:'earthquake'` 후 8초
-- **C**: 결과 화면에 새 결과 값 3종을 보여 주세요 (층별 피해 막대, 원인별 비율 막대 등). 지진 중에는 서 있는 부재의 `position` 이 매 단계 바뀝니다
-- 지진 세기 기준: 세기 1 = 최대 지반 가속도 0.5 g
+- **C**: the size sliders and the report panel were added to `ui/screens/simulateScreen.js` and `styles/ui.css` functionally — restyle them freely. Ranges and texts come from `sim/scenarioScale.js`; reports from `sim/reports/index.js` (`REPORTS`, `buildReport`, `downloadText`, `openHtml`). Please also show the three new result fields on the results screen. During an earthquake, standing parts' `position` changes every step
+- **A**: draw glass shards for `IMPACT kind:'glass'` (dust for now) and consider camera shake during an earthquake (8 s after `SCENARIO_RUN` with `type:'earthquake'`)
+- User-facing text (UI, reports) is Korean; code, comments, docs, commits and PRs are English
 
-### 알려진 문제 · 못 한 것
+### Known issues / not done
 
-- 바닥판이 휘는 표현은 향후 과제
-- 아파트 8층 전체 붕괴는 여전히 무거움 (평균 44 ms/단계) — 시연은 5층 이하 권장
-- 지진은 층 단위 근사라 비틀림(L자형 평면) 피해는 없음
+- Slab bending is future work; the earthquake model ignores torsion (L-shape)
+- A full apartment 8F collapse is still heavy (avg 44 ms/step) — demo at 5 floors or fewer
+- Walls carry no vertical load in this model, so the key member map rates walls by seismic contribution only
 
-### 스크린샷
+### Screenshot
 
-| 필로티 5층 지진 (세기 0.7): 흔들림 → 유리 깨짐 · 1층 기둥 손상 → 1층 기둥 파괴 |
-| ------------------------------------------------------------------------------ |
-| ![](handoff/stage2b-earthquake.png)                                            |
-
-### 2단계 B 추가 (11/9 리뷰 반영)
-
-- 홀로 선 기둥 쓰러짐(횡지지), 시나리오마다 실제 단위(충격 km/h · 폭발 TNT kg · 지진 규모 + 진앙 거리 · 화재 분)
-- **보고서 3종**: 시뮬레이션 화면 아래 "보고서" — ① 로그 분석 ② 설계안 비교 ③ 핵심 부재 지도 → `.html`(인쇄 → PDF) + `.csv`. 서버 없음
-- C에게: 세기 막대 · 보고서 영역을 `simulateScreen.js` 에 기능 위주로 넣었습니다. 디자인은 자유롭게 다듬어 주세요 (계산은 `sim/scenarioScale.js`, `sim/reports/index.js`)
-- 통합 담당: `main.js` 에서 `mountUI` 에 `getSim` 을 넘깁니다
+| Piloti 5F earthquake: sway → glass breaks · ground-floor columns damaged → columns fail |
+| --------------------------------------------------------------------------------------- |
+| ![](handoff/stage2b-earthquake.png)                                                     |

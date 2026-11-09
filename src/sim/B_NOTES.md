@@ -1,302 +1,253 @@
-# B 구현 메모 — 시뮬레이션 · 물리
+# Role B notes — Simulation and physics
 
-## B-1. 무게에 따른 파괴 (충돌 피해 + 쌓인 잔해 하중)
+Code: `src/sim/` (simulation, scenarios, reports) · `src/data/materialPhysics.js` (material values) · `scripts/` (headless checks)
 
-프로포절 피드백("단순 규칙 → 물체 간 충돌과 상호작용")에 대한 핵심 구현입니다.
-떨어지는 부재가 **어떤 재료로, 얼마나 무겁게, 어디를, 어느 방향으로** 치는지에 따라 피해가 달라집니다.
+## B-1. Weight-driven damage (impact damage + piled debris load)
 
-코드: `src/sim/impact.js` (식, 순수 함수) · `src/sim/simulation.js` (물리 엔진 연결) · `src/data/materialPhysics.js` (재료 값)
+The core response to the proposal feedback ("simple rules → interactions between objects").
+Damage depends on **what material falls, how heavy it is, where it hits and from which direction**.
 
-### 1) 충돌 피해 — 에너지 비교
+Code: `src/sim/impact.js` (formulas, pure functions) · `src/sim/simulation.js` (physics wiring)
 
-떨어지는 강체가 서 있는 부재에 **처음 닿는 순간**(cannon-es `collide` 이벤트)마다 계산합니다.
+### 1) Impact damage — energy comparison
 
-| 단계         | 식                          | 의미                                                                       |
-| ------------ | --------------------------- | -------------------------------------------------------------------------- |
-| 충돌 에너지  | E = ½ · m · vₙ²             | m: 떨어진 부재 질량(t), vₙ: 접촉면 수직 방향 충돌 속도(m/s) → kJ           |
-| 흡수 에너지  | Eₐ = E · (1 − e²)           | e: 반발 계수. e²만큼은 튕겨 나가고 나머지가 변형 · 파괴에 쓰임             |
-| 맞은 부재 몫 | Eₜ = 0.5 · Eₐ               | 두 물체가 함께 변형하므로 절반씩 흡수한다고 가정                           |
-| 흡수 능력    | U = σ²/(2E) · μ · solid · V | 재료역학의 **변형 에너지 밀도**(레질리언스) × 연성 계수 × 실체 비율 × 부피 |
-| 체력 감소    | Δhp = Eₜ · f / U            | f: 충돌 위치 · 방향 계수                                                   |
+Computed whenever a falling body **first touches** a standing part (cannon-es `collide` event).
 
-예) RC 바닥판 조각(2 × 0.25 × 2 m, 2.4 t)이 한 층(3 m) 떨어져 아래 바닥판에 닿으면 vₙ ≈ 7.7 m/s, E ≈ 71 kJ
+| Step            | Formula                     | Meaning                                                                |
+| --------------- | --------------------------- | ---------------------------------------------------------------------- |
+| Impact energy   | E = ½ · m · vₙ²             | m: falling mass (t), vₙ: impact speed normal to the contact (m/s) → kJ |
+| Absorbed energy | Eₐ = E · (1 − e²)           | e: restitution. e² bounces back, the rest deforms and breaks           |
+| Target's share  | Eₜ = 0.5 · Eₐ               | both bodies deform, so each absorbs half                               |
+| Energy capacity | U = σ²/(2E) · μ · solid · V | strain energy density (resilience) × ductility × solid ratio × volume  |
+| hp loss         | Δhp = Eₜ · f / U            | f: location / direction factor                                         |
 
-| 떨어진 판 → 맞은 판 | 가운데           | 가장자리 |
-| ------------------- | ---------------- | -------- |
-| RC → RC             | 0.77 (크게 손상) | 0.33     |
-| RC → 목조           | 1.26 (부서짐)    | 0.53     |
-| 목조 → RC           | 0.19             | 0.08     |
-| 목조 → 목조         | 0.31             | 0.13     |
+Example: an RC slab piece (2 × 0.25 × 2 m, 2.4 t) falling one story (3 m) onto the slab below: vₙ ≈ 7.7 m/s, E ≈ 71 kJ
 
-### 2) 충돌 위치 · 방향 계수 f
+| Falling slab → hit slab | mid-span            | edge |
+| ----------------------- | ------------------- | ---- |
+| RC → RC                 | 0.77 (heavy damage) | 0.33 |
+| RC → timber             | 1.26 (breaks)       | 0.53 |
+| timber → RC             | 0.19                | 0.08 |
+| timber → timber         | 0.31                | 0.13 |
 
-단순보에 집중하중 P가 위치 ξ(0~1)에 작용할 때 최대 휨모멘트는 M = P·L·ξ(1−ξ) 로, 가운데(ξ = 0.5)에서 최대입니다.
-이를 b(ξ) = 4ξ(1−ξ)로 정규화했습니다. 지점 근처는 휨 대신 전단이 지배하므로 바닥값(0.4)을 둡니다.
+### 2) Location / direction factor f
 
-| 부재                             | 충돌                | f                                                            |
-| -------------------------------- | ------------------- | ------------------------------------------------------------ |
-| 보                               | 모든 방향           | 0.4 + 0.6 · b(ξ\_길이)                                       |
-| 바닥판 · 지붕 · 벽 · 창 · 장식판 | 면에 수직으로 침    | 0.4 + 0.6 · b(ξ₁) · b(ξ₂)                                    |
-| 〃                               | 면을 따라 스침      | 0.4                                                          |
-| 기둥                             | 위에서 누름(축방향) | 0.35 — 기둥은 축하중을 받도록 설계됨                         |
-| 기둥                             | 옆에서 침           | 0.5 + 1.0 · b(ξ\_높이) — 휨에 약함, 높이 가운데에서 최대 1.5 |
+For a simple beam under a point load P at position ξ (0–1), the maximum moment is M = P·L·ξ(1−ξ), largest at mid-span.
+It is normalized as b(ξ) = 4ξ(1−ξ). Near supports shear governs instead of bending, so there is a floor value (0.4).
 
-충돌 지점과 방향은 부재의 회전(쿼터니언)을 되돌려 부재 기준 좌표로 바꾼 뒤 판정하므로 기울어진 지붕판에도 맞게 적용됩니다.
+| Member                                    | Hit               | f                                                                  |
+| ----------------------------------------- | ----------------- | ------------------------------------------------------------------ |
+| Beam                                      | any direction     | 0.4 + 0.6 · b(ξ_length)                                            |
+| Slab · roof · wall · window · decor plate | out of plane      | 0.4 + 0.6 · b(ξ₁) · b(ξ₂)                                          |
+| 〃                                        | in-plane glancing | 0.4                                                                |
+| Column                                    | axial from above  | 0.35 — columns are designed for axial load                         |
+| Column                                    | lateral           | 0.5 + 1.0 · b(ξ_height) — weak in bending, up to 1.5 at mid-height |
 
-### 3) 쌓인 잔해 하중 — 설계 기준과 비교
+The contact point and direction are transformed into the part's local frame (inverse quaternion), so tilted gable roof pieces are handled correctly.
 
-| 단계         | 식                                  |
-| ------------ | ----------------------------------- |
-| 고정하중     | D = 밀도 · g · 두께 (kN/m²)         |
-| 설계 활하중  | L = 2.0 kN/m² (KDS 41 10 15 주거용) |
-| 붕괴 내력    | q_u = γ · (1.2D + 1.6L), γ = 1.8    |
-| 여유 하중    | C = (q_u − D) · 평면 면적 (kN)      |
-| 하중 초과 시 | Δhp/초 = 2 · (W/C − 1)              |
+### 3) Piled debris load — compared with the design code
 
-- 모든 수평 부재는 기준의 하중조합(1.2D + 1.6L)을 견디도록 설계되었고, 실제 붕괴는 그보다 γ배 큰 하중에서 일어난다고 가정했습니다 (강도감소계수 · 재료 초과강도 · 여유를 합친 배율).
-- 잔해가 멈추면(또는 거의 멈춘 채 얹히면) 그 순간 **아래로 닿아 있는 부재**를 기록하고, 잔해 위의 잔해는 아래 잔해를 거쳐 무게를 전달합니다.
-- 예) 2 × 2 m RC 바닥판의 여유 하중 ≈ 50 kN(약 5톤), 목조 바닥판 ≈ 30 kN(약 3톤). 위층 바닥판 3장 정도가 쌓이면 RC 바닥판도 버티지 못합니다.
+| Step             | Formula                                  |
+| ---------------- | ---------------------------------------- |
+| Dead load        | D = density · g · thickness (kN/m²)      |
+| Design live load | L = 2.0 kN/m² (KDS 41 10 15 residential) |
+| Collapse load    | q_u = γ · (1.2D + 1.6L), γ = 1.8         |
+| Reserve capacity | C = (q_u − D) · plan area (kN)           |
+| When overloaded  | Δhp/s = 2 · (W/C − 1)                    |
 
-### 재료 값의 근거
+- Every horizontal member is assumed to be designed for the code load combination (1.2D + 1.6L), with actual collapse at γ times that load (strength reduction factor, material overstrength and margin combined).
+- When debris settles (or rests almost still), the parts **directly below it** are recorded; debris on debris passes its weight on through the lower debris.
+- Example: the reserve of a 2 × 2 m RC slab ≈ 50 kN (about 5 t), a timber slab ≈ 30 kN (about 3 t). About three upper-floor slab pieces are enough to break even an RC slab.
 
-| 재료              | σ (MPa)    | E (GPa) | μ   | solid      | e    | 근거                                                          |
-| ----------------- | ---------- | ------- | --- | ---------- | ---- | ------------------------------------------------------------- |
-| 철근콘크리트      | 24 (압축)  | 25.8    | 4   | 1          | 0.15 | fck 24 MPa(국내 주거 일반), Ec = 8500·∛(fck+4) (KDS 14 20 10) |
-| 철골              | 275 (항복) | 205     | 8   | 0.14       | 0.3  | SS275 (KDS 14 31 10), H-400×400 단면적 ÷ 외곽 상자 ≈ 0.14     |
-| 목재              | 24 (휨)    | 11      | 1.5 | 0.6        | 0.4  | 구조용 목재 C24 (EN 338), 장선 바닥 실체 비율 가정            |
-| 벽돌 조적         | 10 (압축)  | 7       | 1   | 1          | 0.15 | Em = 700·f'm (TMS 402 점토 조적)                              |
-| 경량 패널         | 1          | 0.3     | 2   | 1          | 0.1  | 샌드위치 패널 등가값 — **추정값**                             |
-| 유리(창 · 커튼월) | 45 (휨)    | 70      | 1   | 0.1 / 0.15 | 0.5  | 판유리 특성 휨강도 · 탄성계수 (EN 572)                        |
+### Material values and sources
 
-- **연성 계수 μ와 반발 계수 e는 문헌의 대표 범위에서 고른 가정값**입니다. 강재처럼 항복 후에도 크게 늘어나는 재료는 크게, 유리 · 조적처럼 깨지는 재료는 1로 두었습니다.
-- 밀도 · 조각 수 · 내화성은 B-4에서 실제 기준으로 보정했습니다 (아래 B-4).
+| Material                      | σ (MPa)          | E (GPa) | μ   | solid      | e    | Source                                                                     |
+| ----------------------------- | ---------------- | ------- | --- | ---------- | ---- | -------------------------------------------------------------------------- |
+| Reinforced concrete           | 24 (compressive) | 25.8    | 4   | 1          | 0.15 | fck 24 MPa (typical Korean residential), Ec = 8500·∛(fck+4) (KDS 14 20 10) |
+| Steel                         | 275 (yield)      | 205     | 8   | 0.14       | 0.3  | SS275 (KDS 14 31 10), H-400×400 area ÷ outer box ≈ 0.14                    |
+| Timber                        | 24 (bending)     | 11      | 1.5 | 0.6        | 0.4  | structural timber C24 (EN 338), assumed joist-floor solid ratio            |
+| Brick masonry                 | 10 (compressive) | 7       | 1   | 1          | 0.15 | Em = 700·f'm (TMS 402 clay masonry)                                        |
+| Light panel                   | 1                | 0.3     | 2   | 1          | 0.1  | sandwich panel equivalent — **estimate**                                   |
+| Glass (window · curtain wall) | 45 (bending)     | 70      | 1   | 0.1 / 0.15 | 0.5  | float glass characteristic bending strength and modulus (EN 572)           |
 
-### 결과 (scripts/compare-crush.mjs — 위층 기둥을 모두 부숴 위층을 떨어뜨림)
+- **Ductility μ and restitution e are assumptions chosen from typical literature ranges.** Materials that keep stretching after yield (steel) get large values; brittle ones (glass, masonry) get 1.
+- Density, fragment count and fire resistance were calibrated in B-4 (below).
 
-| 건물                         | 재료           | 무너진 부재 | 아래층 손상 · 붕괴 | 무너진 층 |
-| ---------------------------- | -------------- | ----------- | ------------------ | --------- |
-| 필로티 5층 (4층 기둥 파괴)   | 철근콘크리트   | 85%         | 264 / 283          | 4         |
-|                              | 철골 + RC 바닥 | 86%         | 259 / 283          | 5         |
-|                              | 목조           | 44%         | 52 / 283           | 1         |
-| 단독주택 3층 (3층 기둥 파괴) | 철근콘크리트   | 50%         | 80 / 170           | 1         |
-|                              | 철골 + RC 바닥 | 82%         | 148 / 170          | 3         |
-|                              | 목조           | 39%         | 45 / 170           | 1         |
+### Results (`scripts/compare-crush.mjs` — destroy every column of an upper floor so the floors above fall)
 
-무거운 RC 바닥이 떨어지면 아래층이 연쇄로 무너지는 **팬케이크 붕괴**가 일어나고, 가벼운 목조 바닥은 아래층이 대부분 버팁니다.
+| Building                                | Material        | Collapsed parts | Lower floors damaged / collapsed | Floors lost |
+| --------------------------------------- | --------------- | --------------- | -------------------------------- | ----------- |
+| Piloti 5F (4th-floor columns destroyed) | RC              | 93%             | 272 / 283                        | 5           |
+|                                         | steel + RC slab | 74%             | 213 / 283                        | 2           |
+|                                         | timber          | 45%             | 64 / 283                         | 1           |
+| House 3F (3rd-floor columns destroyed)  | RC              | 58%             | 103 / 170                        | 3           |
+|                                         | steel + RC slab | 48%             | 78 / 170                         | 1           |
+|                                         | timber          | 39%             | 54 / 170                         | 1           |
 
-### 함께 바꾼 것
+Heavy RC floors falling cause a **pancake collapse** of the floors below; light timber floors mostly leave the lower floors standing.
 
-- 장식 부재(창 · 난간 · 박공 끝벽 · 옥탑 등)에도 처음부터 고정 강체를 붙여 충돌 피해를 받게 함
-- 멈춘 잔해가 옆 잔해에 살짝 닿아 깨어나도, 1 m/s 이상으로 움직이기 전까지는 '정지' 상태를 유지 (깨어남 ↔ 잠듦 반복 방지). 멈춘 잔해에는 감쇠를 크게 줌
-- 강한 충돌(5 kJ 이상)에서 A의 먼지 이펙트를 발생 (`IMPACT kind:'collision'`), 초당 최대 8개
-- `results.js`: 기능 상실(failed)된 바닥판도 "무너진 층" 집계에 포함 (A가 넘긴 한계 3번)
-- A의 `optimization.test.js` 2번 테스트를 새 깨어남 규칙에 맞게 수정
+### Also changed
 
-### 한계 (발표 시 그대로 설명)
+- Decor parts (windows, railings, gable end walls, rooftop structures) get static bodies from the start so they can be damaged by impacts
+- Settled debris that is lightly woken by a neighbor stays "settled" until it moves faster than 1 m/s (prevents wake ↔ sleep churn); settled debris gets high damping
+- Strong impacts (≥ 5 kJ) trigger A's dust effect (`IMPACT kind:'collision'`), at most 8 per second
+- `results.js`: failed slabs also count toward "floors lost" (A's handed-over limitation #3)
+- Updated A's `optimization.test.js` test 2 for the new wake rule
 
-- 교육용 단순화 모델입니다. 실제 구조 해석(유한요소 해석, 응력 분포)이 아닙니다.
-- 충돌 시 맞은 부재가 휘거나 찌그러지는 변형은 표현하지 않고, 체력(hp)으로만 누적합니다.
-- 한 번의 충돌이 여러 부재에 동시에 걸치면 접점마다 따로 계산합니다.
-- 큰 건물이 통째로 무너지면 움직이는 강체가 1,000개를 넘어 물리 계산이 느려집니다 (아래 성능 항목).
+## B-2. Fixes handed over by A
 
-### 확인 방법
+- Fragment placement and distance checks ignored rotation on tilted parts (gable roofs) → now quaternion-aware (`toWorld` · `toLocal` · `distanceToBox` in `impact.js`)
+- The final damage of a fire or earthquake on its last step was not fed into the support check → `updateSupports()` always runs on steps with ongoing effects
 
-```sh
-node --test src/sim/tests/impact.test.js src/sim/tests/optimization.test.js
-node scripts/compare-crush.mjs piloti 5 4
-npm run bench -- piloti 5
-```
+## B-3. Glass shatter (performance)
 
----
+- Glass (`window` · `curtain` materials: windows, curtain wall, balcony glass) **shatters immediately without rigid bodies** (`failed`) when it loses support or its hp reaches 0
+- Real glass panes break into small pieces rather than falling as large sheets, so this also looks right, and glass (15–20% of a building's parts) drops out of the physics
+- Shattering emits `IMPACT kind:'glass'` (at most 16 per second). A renderer that does not know `glass` falls back to dust
 
-## B-2. A가 넘긴 버그 정리
+| Benchmark (`npm run bench`) | B-1                             | after B-3 + B-4            |
+| --------------------------- | ------------------------------- | -------------------------- |
+| Piloti 5F                   | avg 24.7 ms/step · worst 111 ms | **10.0 ms** · worst 75 ms  |
+| Apartment 8F                | avg 58.5 ms/step · worst 318 ms | **43.9 ms** · worst 194 ms |
 
-- 기울어진 부재(박공지붕)의 조각 위치와 거리 계산이 회전을 무시하던 문제 → 쿼터니언 회전 반영 (`impact.js` 의 `toWorld` · `toLocal` · `distanceToBox`)
-- 화재 · 지진이 끝나는 단계의 마지막 피해가 지지 판단에 반영되지 않던 문제 → 효과가 있던 단계에는 항상 `updateSupports()`
+A full apartment 8F collapse is still heavy (the loop guard keeps the screen responsive by slowing playback). Demos are recommended at 5 floors or fewer.
 
-## B-3. 유리 깨짐 (성능)
+## B-4. Material calibration (real-world references)
 
-- 유리(`window` · `curtain` 재료: 창 · 커튼월 · 발코니 유리)는 지지를 잃거나 체력이 0이 되면 **강체 없이 바로 깨짐** (`failed`)
-- 실제 판유리도 큰 판으로 떨어지기보다 작은 조각으로 깨지므로 표현상으로도 맞고, 건물 부재의 15~20%를 차지하는 유리가 물리 계산에서 빠짐
-- 깨질 때 `IMPACT kind:'glass'` 이펙트 (초당 최대 16개). A의 렌더러가 아직 `glass` 를 모르면 먼지 효과로 대체됨
+Strength values (σ, E, strength) are unchanged; only **density, fragment count and fire resistance** were corrected.
 
-| 벤치 (`npm run bench`) | B-1                             | B-3 + B-4 후              |
-| ---------------------- | ------------------------------- | ------------------------- |
-| 필로티 5층             | 평균 24.7 ms/단계 · 최악 111 ms | **10.0 ms** · 최악 75 ms  |
-| 아파트 8층             | 평균 58.5 ms/단계 · 최악 318 ms | **43.9 ms** · 최악 194 ms |
+| Material      | Density (t/m³, per box) | Fire resistance | Fragments | Source                                                                                             |
+| ------------- | ----------------------- | --------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| RC            | 2.4                     | 0.94            | 3         | 24 kN/m³ (KDS 41 10 15), 3 h rating for main structure, chunks held by rebar                       |
+| Steel         | 1.6 → **1.1**           | 0.4 → **0.5**   | 2 → **1** | 7.85 × solid ratio 0.14, unprotected steel reaches ~550 °C in ~20 min, bends rather than splitting |
+| Timber        | 0.6 → **0.25**          | 0.1 → **0.67**  | 2         | C24 mean 0.42 × 0.6, light timber frame ~30 min (charring 0.65–0.8 mm/min, EN 1995-1-2)            |
+| Brick masonry | 1.9                     | 0.8 → **0.92**  | 4         | ~19 kN/m³, 190 mm masonry wall ~2 h, scatters brick by brick                                       |
+| Light panel   | 0.3 → **0.1**           | 0.3 → **0**     | 2         | ~20 kg/m² with core ÷ 0.2 m wall, non-rated panel under 10 min                                     |
+| Glass         | 0.8 → **0.25 / 0.38**   | 0.3 → **0.17**  | 1         | 2.5 × thickness ratio, ordinary glass breaks within ~12 min in a fire                              |
 
-아파트 8층이 통째로 무너지면 여전히 무겁습니다 (루프 보호로 화면은 멈추지 않고 느리게 재생). 발표 시연은 5층 이하 권장.
+- **Density = real density × solid ratio**: values are per part box volume, so the empty space in H-sections and joist floors is removed (consistent with `solid` in the impact model)
+- **Fire resistance = 1 − 10 min / fire rating**: fire damage ∝ (1 − fireResistance), so the damage rate is inversely proportional to the fire rating
 
-## B-4. 재료 값 보정 (실제 기준)
+## B-5. Earthquake — the ground really shakes
 
-강도 값(σ, E, strength)은 그대로 두고 **밀도 · 조각 수 · 내화성**만 고쳤습니다.
+Code: `src/sim/scenarios/earthquake.js`
 
-| 재료         | 밀도 (t/m³, 상자 기준) | 내화성         | 조각 수   | 근거                                                                                  |
-| ------------ | ---------------------- | -------------- | --------- | ------------------------------------------------------------------------------------- |
-| 철근콘크리트 | 2.4                    | 0.94           | 3         | 24 kN/m³ (KDS 41 10 15), 주요 구조부 내화 3시간, 철근에 묶인 덩어리                   |
-| 철골         | 1.6 → **1.1**          | 0.4 → **0.5**  | 2 → **1** | 7.85 × 실체 비율 0.14, 무피복 강재 임계온도(약 550℃) 약 20분, 휘어질 뿐 쪼개지지 않음 |
-| 목재         | 0.6 → **0.25**         | 0.1 → **0.67** | 2         | C24 평균 0.42 × 0.6, 경골 목조 약 30분 (탄화 속도 0.65~0.8 mm/분, EN 1995-1-2)        |
-| 벽돌 조적    | 1.9                    | 0.8 → **0.92** | 4         | 약 19 kN/m³, 190 mm 조적벽 약 2시간, 벽돌 단위로 흩어짐                               |
-| 경량 패널    | 0.3 → **0.1**          | 0.3 → **0**    | 2         | 심재 포함 약 20 kg/m² ÷ 벽 두께 0.2 m, 비내화 패널 10분 이하                          |
-| 유리         | 0.8 → **0.25 / 0.38**  | 0.3 → **0.17** | 1         | 2.5 × 두께 비율, 일반 판유리는 화재 시 약 12분 내 깨짐                                |
+### Shaking
 
-- **밀도 = 실제 밀도 × 실체 비율(solid)**: 부재 상자 부피 기준이므로 H형강 · 장선 바닥의 빈 공간을 뺌 (충돌 모델의 solid 와 일관)
-- **내화성 = 1 − 10분 / 내화 시간**: 화재 피해 속도 ∝ (1 − 내화성) 이므로 피해 속도가 내화 시간에 반비례. 목재가 무피복 철골보다 내화 시간은 길지만, 강도 배율(0.5)로 나뉘므로 실제로 타는 속도는 여전히 목재가 가장 빠름
-- 결과 (`compare-crush.mjs`, 위층 기둥 파괴):
+- During the quake (8 s: 1 s ramp-up → 4 s peak → 3 s decay) standing parts become **KINEMATIC bodies** and move with the ground
+- Offset u(h) = d_g(t) · (1 + 1.5 · h / H) — first-mode sway growing with height; the waveform is a sum of 1.6 Hz and 0.9 Hz sine waves
+- The ground plane is also KINEMATIC, so debris on the ground is shaken by friction. A swaying part that starts falling keeps its velocity
+- Afterwards standing parts return to their original position as static bodies
+- The visible ground offset is 0.12 m at 0.5 g — **larger than reality (a few cm) so it can be seen**. Damage is computed separately from acceleration
+- Touching KINEMATIC parts skip collision checks with each other (collision groups), so shaking stays cheap (apartment 8F ≈ 2.5 ms/step)
 
-| 건물         | 재료           | 무너진 부재 | 아래층 손상 · 붕괴 | 무너진 층 |
-| ------------ | -------------- | ----------- | ------------------ | --------- |
-| 필로티 5층   | 철근콘크리트   | 93%         | 272 / 283          | 5         |
-|              | 철골 + RC 바닥 | 74%         | 213 / 283          | 2         |
-|              | 목조           | 45%         | 64 / 283           | 1         |
-| 단독주택 3층 | 철근콘크리트   | 58%         | 103 / 170          | 3         |
-|              | 철골 + RC 바닥 | 48%         | 78 / 170           | 1         |
-|              | 목조           | 39%         | 54 / 170           | 1         |
+### Damage — equivalent static method (simplified from KDS 41 17 00)
 
-무거운 순서(RC > 철골 > 목조)대로 아래층 피해가 커집니다.
+| Step                  | Formula                                                                           |
+| --------------------- | --------------------------------------------------------------------------------- |
+| Ground acceleration   | a_g(t) = PGA · envelope · waveform (PGA from magnitude and distance, B-8)         |
+| Building acceleration | S_a = 2.5 · a_g (short-period plateau of the design spectrum)                     |
+| Base shear            | V = M · S_a                                                                       |
+| Story force           | F_i = V · m_i h_i / Σ m_j h_j (story mass × height)                               |
+| Story shear           | V*i = Σ*{j≥i} F_j                                                                 |
+| Story capacity        | C_i = Σ τ · A · (member height / story height) · √(2μ − 1) · hp                   |
+| hp loss               | Δhp/s = 1.5 · (V_i / C_i − 1) when the story shear ratio exceeds 1                |
+| Glass                 | above a story shear ratio of 0.5, story drift breaks that story's glass at random |
 
-## B-5. 지진 — 지면이 실제로 흔들림
+- τ: columns use **flexural yield** 2·Mp/h ÷ area (`shearColumn`), walls use **shear strength** (`shearWall`). Walls resist only along their length
+- √(2μ − 1): ductility-based force reduction (Newmark–Hall, short period), using the same μ as the impact model
+- Capacity drops with hp, so a damaged story fails faster
 
-코드: `src/sim/scenarios/earthquake.js`
+| Material      | shearColumn (MPa) | shearWall (MPa) | Source                                                                                   |
+| ------------- | ----------------- | --------------- | ---------------------------------------------------------------------------------------- |
+| RC            | 0.7               | 1.8             | 400 × 400 column Mn ≈ 150 kN·m (fck 24, fy 400) / wall Vc + Vs (KDS 14 20 22, ρh 0.0025) |
+| Steel         | 4.6               | 4.6             | H-400×400 SS275 Mp ≈ 1,010 kN·m                                                          |
+| Timber        | 0.05              | 0.06            | light timber shear wall 10–15 kN/m — **estimate**                                        |
+| Brick masonry | 0.1               | 0.2             | unreinforced masonry bed-joint shear 0.1–0.3 MPa                                         |
+| Light panel   | 0.05              | 0.05            | **estimate**                                                                             |
 
-### 흔들림
+- The **wall-less piloti ground floor has about one third of the story capacity** of the floors above, so its columns break first and the floors above drop (the same pattern as the piloti damage in the 2017 Pohang earthquake)
+- Wall-heavy RC apartments (wall-type structures) hold well, unreinforced brick houses collapse badly, and steel frames hold thanks to light panels
 
-- 지진 동안(8초: 1초 커짐 → 4초 최대 → 3초 잦아듦) 서 있는 부재를 **KINEMATIC 강체**로 바꿔 지면과 함께 움직임
-- 변위 u(h) = d_g(t) · (1 + 1.5 · h / H) — 높이에 비례해 크게 흔들리는 1차 모드. 파형은 1.6 Hz · 0.9 Hz 사인파 합
-- 바닥(땅)도 KINEMATIC 으로 움직여, 땅에 떨어진 잔해가 마찰로 함께 흔들림. 흔들리던 부재가 떨어지면 그 순간의 속도를 그대로 가지고 떨어짐
-- 끝나면 서 있는 부재를 원래 위치 · 고정 강체로 되돌림
-- 지면 변위는 세기 1에서 0.12 m — **실제(수 cm)보다 키운 화면용 값**입니다. 피해 계산은 아래 가속도로 따로 합니다
-- 서로 맞닿은 KINEMATIC 부재끼리는 충돌 검사를 건너뜀(충돌 그룹) → 흔들리는 동안에도 가벼움 (아파트 8층 약 2.5 ms/단계)
+## B-6. New result fields
 
-### 피해 — 등가정적해석 (KDS 41 17 00 방식을 단순화)
+Three fields added to `SimResults` (`results.js`, contract in `docs/CONTRACTS.md` section 4):
 
-| 단계         | 식                                                                |
-| ------------ | ----------------------------------------------------------------- |
-| 지반 가속도  | a_g(t) = PGA · 포락선 · 파형, PGA = 0.5 g × 세기                  |
-| 건물 가속도  | S_a = 2.5 · a_g (설계응답스펙트럼 단주기 구간 증폭)               |
-| 밑면 전단력  | V = M · S_a                                                       |
-| 층 지진력    | F_i = V · m_i h_i / Σ m_j h_j (층 질량 × 높이)                    |
-| 층 전단력    | V*i = Σ*{j≥i} F_j                                                 |
-| 층 전단 내력 | C_i = Σ τ · A · (부재 높이 / 층 높이) · √(2μ − 1) · hp            |
-| 체력 감소    | Δhp/초 = 1.5 · (V_i / C_i − 1), 층 전단비가 1을 넘을 때           |
-| 유리         | 층 전단비 0.5 이상이면 층간 변형으로 그 층 유리가 확률적으로 깨짐 |
+- `collapseTime`: seconds from scenario start to the last **structural** collapse, `null` if none
+- `floorDamage`: per-floor damage `[{ floor, ratio }]` — average hp loss of the floor's structural parts (collapsed parts count as 1)
+- `damageByCause`: `{ scenario, collision, debris }` (sums to 1) — direct scenario damage · falling-part impacts · piled debris weight
 
-- τ: 기둥은 **휨 항복 기준** 2·Mp/h ÷ 단면적 (`shearColumn`), 벽은 **전단강도** (`shearWall`). 벽은 길이 방향으로만 버팀
-- √(2μ − 1): 연성에 의한 지진력 감소 (Newmark–Hall, 단주기). μ 는 충돌 모델과 같은 연성 계수
-- hp 가 줄면 내력도 줄어 한 번 손상된 층이 더 빨리 무너짐
+## B-7. Review fixes
 
-| 재료         | shearColumn (MPa) | shearWall (MPa) | 근거                                                                                 |
-| ------------ | ----------------- | --------------- | ------------------------------------------------------------------------------------ |
-| 철근콘크리트 | 0.7               | 1.8             | 400 × 400 기둥 Mn ≈ 150 kN·m (fck 24, fy 400) / 벽 Vc + Vs (KDS 14 20 22, ρh 0.0025) |
-| 철골         | 4.6               | 4.6             | H-400×400 SS275 Mp ≈ 1,010 kN·m                                                      |
-| 목재         | 0.05              | 0.06            | 경골 목조 전단벽 10~15 kN/m — **추정값**                                             |
-| 벽돌 조적    | 0.1               | 0.2             | 비보강 조적 줄눈 전단 0.1~0.3 MPa                                                    |
-| 경량 패널    | 0.05              | 0.05            | **추정값**                                                                           |
+### Free-standing column towers — lateral bracing check
 
-### 결과 (`scripts/compare-quake.mjs`)
+- Symptom: after an explosion in a 2-story house, **corner columns from floors 1 and 2 stayed standing as 5.5 m towers** with every beam and slab gone
+- Cause: the support rule only asked "is it supported from below?", so an upper column stood as long as the column below was alive
+- Fix (`isLaterallyStable` in `structure.js`): a **column standing on another column** topples when it loses both its top end (beams/slabs it supports) and its lower joint (beams/slabs the column below supports) — nothing holds it sideways (a column free at both ends has an unbounded buckling length). It is tilted as it detaches so it does not balance on top
+- A ground-floor column is fixed to its foundation, so it may stand alone (common at real collapse sites)
 
-| 건물         | 재료                     | 세기 0.5    | 세기 0.6      | 세기 0.75   | 세기 1                        |
-| ------------ | ------------------------ | ----------- | ------------- | ----------- | ----------------------------- |
-| 필로티 5층   | 기본 (RC 골조 + 벽돌 벽) | 1층 피해 2% | **전체 붕괴** | 전체 붕괴   | 전체 붕괴                     |
-|              | 철근콘크리트             | 피해 없음   | 피해 없음     | 1층 피해 8% | **1층 기둥 파괴 → 전체 붕괴** |
-| 아파트 8층   | 철근콘크리트 (벽식)      |             |               |             | 1층 3% · 2층 1%               |
-| 단독주택 2층 | 목조 + 벽돌              | 유리만 깨짐 |               |             | 전체 붕괴                     |
-| L자형 5층    | 철골 + 패널              |             |               |             | 피해 없음                     |
+### Physics-based impact scenario
 
-- 벽이 없는 **필로티 1층의 층 전단 내력이 위층의 1/3** 수준이라 1층 기둥이 먼저 부서지고 위층이 내려앉음 (2017 포항 지진 필로티 피해와 같은 양상)
-- 벽이 많은 RC 아파트(벽식 구조)는 잘 버팀, 비보강 벽돌 주택은 크게 무너짐, 철골 골조는 가벼운 패널 덕에 버팀
+- Before: an arbitrary rule removing `0.3 + 0.7 × intensity` hp → impossible to explain as a real impact
+- Now: **a 2 t wrecking ball** hits at the chosen speed; damage uses the same energy model as falling parts (B-1)
+  - Vertical members are hit from the side, horizontal ones from above, at the middle. Area targets scale the energy by (1 − distance/radius)
 
-## B-6. 결과 값 추가
+## B-8. Scenario sizes in real-world units
 
-`SimResults` 에 3가지 추가 (`results.js`, 약속은 `docs/CONTRACTS.md` 4장):
+The 0–1 intensity slider is replaced by a **real-world value with its own unit and range** per scenario (`sim/scenarioScale.js`, contract in `docs/CONTRACTS.md` section 3).
 
-- `collapseTime`: 시나리오 시작 → 마지막 **구조** 부재가 무너질 때까지 (초), 없으면 null
-- `floorDamage`: 층별 피해율 `[{ floor, ratio }]` — 그 층 구조 부재의 평균 체력 손실 (무너진 부재는 1)
-- `damageByCause`: 원인별 피해 비율 `{ scenario, collision, debris }` (합 1) — 시나리오 직접 피해 · 떨어진 부재 충돌 · 쌓인 잔해 무게
+| Scenario   | Value                             | Range (default)                | How the simulation uses it                                                                                  |
+| ---------- | --------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Impact     | 2 t wrecking ball speed           | 5–60 km/h (30)                 | impact energy ½mv² → B-1 energy model                                                                       |
+| Explosion  | TNT equivalent                    | 0.1–100 kg, log scale (1)      | damage radius R = 7 · W^(1/3) m (~20 kPa overpressure, Kingery–Bulmash), damage factor (R − 2) / 6          |
+| Earthquake | magnitude M + epicentral distance | M 1.0–9.0 (6.0), 1–100 km (10) | PGA: log₁₀ PGA = −1.02 + 0.249M − log₁₀ r − 0.00255 r, r = √(d² + 7.3²) (Joyner & Boore, 1981) → B-5 damage |
+| Fire       | standard fire (ISO 834) duration  | 5–180 min (30)                 | damage = duration / part fire rating (no strength multiplier)                                               |
 
-### 확인 방법 (B 전체)
+- Magnitude alone does not determine shaking (the same magnitude is weaker farther away), so the earthquake also takes the **epicentral distance**
+  - e.g. M 6.0 at 10 km → 0.22 g (MMI VII, Korean design earthquake level), M 6.5 at 10 km → 0.30 g, M 7.0 at 30 km → 0.14 g
+  - Piloti 5F (default materials): holds at M 6.0 · 10 km, **collapses at M 6.5 · 10 km**
+  - The attenuation relation was fitted on M 5.0–7.7; outside that range (especially M ≤ 4) it is extrapolated and may overestimate, which the UI states
+- Fire: "a part fails once it burns longer than its fire rating" now holds directly (unprotected steel ~20 min, light timber 30 min, masonry 2 h, RC 3 h)
+- Without `value`, the old `intensity` (0–1) is converted, so the floor collapse demo and `compare-*.mjs` scripts still work
+- Explosion damage magnitude is still the base-stage rule; only the radius follows the TNT amount
+
+## B-9. Three reports
+
+Choose one in the **보고서 (Reports)** panel at the bottom of the simulation screen, build it and download it. Everything is computed in the browser — no server or database.
+
+| Report                          | What it does                                                                                                                                                                                                                                | Time (5 floors) |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| ① Simulation log analysis       | From the current simulation's event history: timeline, collapse causes (direct vs cascade), cascade ratio, parts that triggered the largest cascades, order of floor collapse, collapse curve and peak rate                                 | instant         |
+| ② Design alternative comparison | Current building + automatic alternatives (other material sets, ground-floor walls for a piloti) under the same tests: max magnitude withstood (10 km, binary search), per-floor and per-cause damage at M 6.5, 60-minute ground-floor fire | ~1–2 min        |
+| ③ Key member map                | Removes each column and wall of the chosen floor one at a time; grades by progressive collapse (alternate path method, GSA 15%) and seismic contribution; draws the grades on a floor plan                                                  | ~1 min          |
+
+- Output: a self-contained `.html` report (charts and plan included, print → PDF) + raw `.csv` (with a BOM so Korean text opens correctly in Excel)
+- Headless: `node scripts/make-report.mjs <log|compare|keymembers> [type] [floors] [floor]`
+- Simulation additions: `sim.getHistory()` (event history and 0.5 s samples), `sim.removeParts(ids)`; each `detached` event records the parts that failed just before it as `trigger`
+- Report simulations use a fixed seed, so the same conditions give the same result
+- The on-screen simulation pauses while a report is computed
+- Report text and UI strings stay in Korean (user-facing); code, comments and docs are in English
+
+### What the results show (examples)
+
+- Piloti 5F comparison: current M 6.3 · RC frame M 6.9 · steel + panel ≥ M 9.0 · timber + brick ≤ M 4.0 · ground-floor wall retrofit M 6.4 (small effect because the added walls are brick)
+- Apartment 5F, ground floor: 11 middle and edge columns are critical (losing any one spreads slab collapse), corner A1 is caution, walls are rated caution / safe by seismic contribution
+
+## Known limitations (to state as-is in the presentation)
+
+- An educational, simplified model — not a structural analysis (no finite elements or stress distribution)
+- Members do not bend or dent; damage accumulates only as hp. Slab bending is future work
+- One impact touching several parts is computed per contact
+- Earthquake damage is a story-level equivalent static approximation — no time-history analysis or torsion (plan irregularity). Results switch fairly sharply between "holds" and "full collapse" because a lost story drops everything above via the support rule
+- Walls carry no vertical load in this model (the frame does), so the key member map rates walls by seismic contribution only
+- Falling RC slabs break their surroundings strongly, so in buildings with few bays (like the piloti) every ground-floor column comes out "critical"
+
+## How to verify
 
 ```sh
 node --test src/build/tests/*.js src/render/tests/*.js src/sim/tests/*.js
 node scripts/compare-crush.mjs piloti 5 4
 node scripts/compare-quake.mjs piloti 5 1
+node scripts/make-report.mjs compare piloti 5
 npm run bench -- piloti 5
 ```
-
-### 남은 한계 · 다음에 할 것
-
-- 바닥판이 휘는 표현은 하지 않음 (향후 과제)
-- 지진 피해는 층 단위 등가정적 근사 — 실제 시간이력 해석이나 비틀림(평면 비대칭)은 고려하지 않음. L자형의 비틀림 피해는 표현되지 않음
-- 피해가 세기에 따라 "버팀 ↔ 전체 붕괴"로 비교적 급격히 바뀜 (한 층이 무너지면 지지 규칙으로 위층이 함께 떨어지므로)
-
-## B-7. 리뷰 반영 (11/9)
-
-### 공중에 떠 보이는 기둥 — 횡지지 판단 추가
-
-- 증상: 단독주택 2층 폭발 후 모서리의 **1층 + 2층 기둥이 겹쳐 5.5 m 높이로 홀로 서 있음** (보 · 바닥판은 모두 떨어짐)
-- 원인: 지지 규칙이 "아래에서 받치는가"만 봐서, 아래 기둥이 살아 있으면 위 기둥도 버팀으로 판단
-- 수정 (`structure.js` 의 `isLaterallyStable`): **기둥 위에 올라선 기둥**이 위 끝(자기가 받치는 보 · 바닥판)과 아래 이음부(아래 기둥이 받치는 보 · 바닥판)를 모두 잃으면 옆으로 잡아 줄 부재가 없으므로 쓰러뜨림 (양 끝이 자유로운 기둥은 좌굴 길이가 무한대). 쓰러질 때 위에서 균형을 잡지 않도록 옆으로 기울임
-- 땅에 선 1층 기둥은 기초에 고정되어 있으므로 혼자 남아도 서 있음 (실제 붕괴 현장에서도 흔한 모습)
-
-### 충격 시나리오를 물리 모델로
-
-- 이전: 체력을 `0.3 + 0.7 × 세기` 만큼 깎는 임의 규칙 → 실제로 어떤 충격인지 설명할 수 없었음
-- 지금: **철거용 쇳덩이 2 t 가 v = 2 + 10 × 세기 (m/s, 시속 7 ~ 43 km)** 로 부딪힘. 피해는 떨어진 부재의 충돌과 같은 에너지 모델 (B-1)
-  - 세운 부재는 옆에서, 수평 부재는 위에서 가운데를 침. 범위 대상은 거리에 따라 에너지가 (1 − 거리/반경) 배
-  - 세기 0.6: RC 기둥 파괴, 철골 기둥 체력 약 50% 감소, 벽돌 · 목재 부재 파괴
-
-### 세기를 실제 크기로 표시 (`sim/intensityScale.js`, 화면은 세기 막대 아래)
-
-| 시나리오 | 세기 0.1                      | 세기 0.6           | 세기 1              | 근거                                                                                    |
-| -------- | ----------------------------- | ------------------ | ------------------- | --------------------------------------------------------------------------------------- |
-| 충격     | 쇳덩이 2t · 시속 11 km (9 kJ) | 시속 29 km (64 kJ) | 시속 43 km (144 kJ) | E = ½mv², 같은 에너지의 승용차(1.5 t) 속도도 표시                                       |
-| 폭발     | TNT 0.05 kg                   | TNT 0.51 kg        | TNT 1.5 kg          | 피해 반경에서 폭풍압 20 kPa, 환산거리 Z ≈ 7 m/kg^(1/3) (Kingery–Bulmash)                |
-| 지진     | 진도 Ⅴ · 0.05 g               | 진도 Ⅶ · 0.3 g     | 진도 Ⅷ · 0.5 g      | PGA ↔ 수정 메르칼리 진도 (Wald et al., 1999), 설계지진 0.22 g (KDS 41 17 00) 대비 배수 |
-| 화재     | 표준화재 2분 · 440℃           | 12분 · 710℃        | 20분 · 780℃         | 피해 = (20 × 세기 분) / 내화 시간, ISO 834 표준화재곡선                                 |
-
-- 지진은 "규모"가 아니라 **진도**로 표시합니다. 규모는 지진 자체의 크기라 같은 규모라도 거리 · 지반에 따라 흔들림이 크게 다르고, 건물 피해를 정하는 것은 그 자리의 흔들림(진도 · 지반 가속도)이기 때문입니다
-- 폭발 · 화재의 피해 크기 자체는 아직 베이스 단계 규칙이고, 표시는 그 규칙이 뜻하는 크기를 역으로 환산한 것입니다
-
-## B-8. 시나리오마다 실제 단위 (11/9)
-
-0 ~ 1 세기 막대를 없애고, 시나리오마다 **실제 단위 · 범위**의 값을 씁니다 (`sim/scenarioScale.js`, 약속은 `docs/CONTRACTS.md` 3장).
-
-| 시나리오 | 값                          | 범위 (기본)                        | 시뮬레이션에 쓰는 방법                                                                                             |
-| -------- | --------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 충격     | 쇳덩이(2 t) 충돌 속도       | 5 ~ 60 km/h (30)                   | 충돌 에너지 ½mv² → B-1 에너지 모델                                                                                 |
-| 폭발     | TNT 환산량                  | 0.1 ~ 100 kg, 로그 눈금 (1)        | 피해 반경 R = 7 · W^(1/3) m (폭풍압 약 20 kPa, Kingery–Bulmash), 피해 배율 (R − 2) / 6                             |
-| 지진     | 규모 M + 진앙 거리          | M 1.0 ~ 9.0 (6.0), 1 ~ 100 km (10) | PGA: log₁₀ PGA = −1.02 + 0.249M − log₁₀ r − 0.00255 r, r = √(d² + 7.3²) (Joyner & Boore, 1981) → B-5 등가정적 피해 |
-| 화재     | 표준화재(ISO 834) 지속 시간 | 5 ~ 180 분 (30)                    | 피해 = 지속 시간 / 부재 내화 시간 (재료 강도 배율은 쓰지 않음)                                                     |
-
-- 지진은 규모만으로는 흔들림이 정해지지 않으므로(같은 규모라도 멀면 약함) **진앙 거리**를 함께 받습니다
-  - 예) M 6.0 · 10 km → 0.22 g (진도 Ⅶ, 국내 설계지진 수준), M 6.5 · 10 km → 0.30 g, M 7.0 · 30 km → 0.14 g
-  - 필로티 5층(기본 재료): M 6.0 · 10 km 버팀, **M 6.5 · 10 km 붕괴**
-  - 감쇠식의 원 자료 범위는 M 5.0 ~ 7.7 — 그 밖(특히 M 4 이하)은 외삽이라 실제보다 크게 나올 수 있어 화면에 표시함
-- 화재: 이제 "내화 시간보다 오래 타면 무너짐"이 그대로 성립 (철골 무피복 약 20분, 경골 목조 30분, 조적 2시간, RC 3시간)
-- `value` 가 없으면 이전 `intensity`(0 ~ 1)를 환산 → 선택한 층 붕괴 시연, `compare-*.mjs` 스크립트는 그대로 동작
-
-## B-9. 보고서 3종 (11/9)
-
-시뮬레이션 화면 아래 **보고서** 영역에서 하나를 골라 만들고 내려받습니다. 서버 · 데이터베이스 없이 브라우저 안에서 계산합니다.
-
-| 보고서                      | 무엇을 하나                                                                                                                                                                       | 시간 (5층 기준) |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| ① 이번 시뮬레이션 로그 분석 | 지금 화면 시뮬레이션의 이벤트 기록으로 진행 시간표, 붕괴 원인(직접 vs 연쇄), 연쇄 배율, 연쇄를 일으킨 부재, 층이 무너진 순서, 붕괴 곡선 · 최고 붕괴 속도                          | 즉시            |
-| ② 설계안 비교 리포트        | 현재 건물 + 자동 대안(다른 재료 조합, 필로티는 1층 벽 보강)을 같은 조건으로 시험: 버티는 최대 규모(진앙 10 km, 이분 탐색), 규모 6.5 기준 지진의 층별 · 원인별 피해, 1층 60분 화재 | 약 1~2분        |
-| ③ 핵심 부재 지도            | 고른 층의 기둥 · 벽을 하나씩 없애 연쇄 붕괴(대체경로법, GSA 15%)와 지진 저항 기여율로 등급을 매겨 평면도에 표시                                                                   | 약 1분          |
-
-- 결과물: 보고서 `.html`(그래프 · 평면도 포함, 외부 파일 없이 열림, 인쇄 → PDF) + 원자료 `.csv`(엑셀에서 한글이 깨지지 않게 BOM 포함)
-- 화면 없이 만들기: `node scripts/make-report.mjs <log|compare|keymembers> [type] [floors] [floor]`
-- 시뮬레이션에 추가한 것: `sim.getHistory()`(이벤트 기록 · 0.5초 표본), `sim.removeParts(ids)`(부재 제거), 붕괴(detached)마다 직전에 부서진 부재를 `trigger` 로 기록
-- 같은 조건이면 같은 결과가 나오도록 보고서용 시뮬레이션은 고정 시드를 씁니다
-- 화면에서 만드는 동안에는 화면 시뮬레이션을 잠시 멈춥니다
-
-### 결과에서 보이는 것 (예시)
-
-- 필로티 5층 비교: 현재 M 6.3 · RC 골조 M 6.9 · 철골 + 패널 ≥ M 9.0 · 목조 + 벽돌 ≤ M 4.0 · 1층 벽 보강 M 6.4 (보강 벽이 벽돌이라 효과가 작음)
-- 아파트 5층 1층 핵심 부재: 가운데 · 테두리 기둥 11개가 핵심(하나만 없어도 바닥 붕괴가 번짐), 모서리 A1 은 주의, 벽은 지진 저항 기여율로 주의 / 여유
-
-### 한계
-
-- 이 모델에서 벽은 바닥의 수직 하중을 받지 않습니다(골조가 받음). 그래서 벽은 지진 저항 기여율로만 평가됩니다
-- 떨어진 RC 바닥이 주변을 부수는 연쇄가 강하게 나와, 필로티처럼 칸이 적은 건물은 어느 기둥이든 "핵심"이 됩니다

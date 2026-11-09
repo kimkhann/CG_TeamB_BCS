@@ -1,5 +1,5 @@
-// 지진 비교: 건물 · 재료 · 세기별로 층 전단비와 피해 확인
-// 사용법: node scripts/compare-quake.mjs [type] [floors] [intensity]
+// Earthquake comparison: per-story damage by building, material and intensity
+// Usage: node scripts/compare-quake.mjs [type] [floors] [intensity 0–1, 1 = 0.5 g PGA]
 import { makeBuilding } from '../src/build/generator.js';
 import { createSimulation } from '../src/sim/simulation.js';
 
@@ -7,10 +7,10 @@ const type = process.argv[2] ?? 'piloti';
 const floors = Number(process.argv[3] ?? 5);
 const intensity = Number(process.argv[4] ?? 1);
 const MATERIALS = [
-  { label: '기본 재료', materials: undefined },
-  { label: '철근콘크리트', materials: { frame: 'rc', slab: 'rc', wall: 'rc' } },
-  { label: '철골 + 패널', materials: { frame: 'steel', slab: 'rc', wall: 'panel' } },
-  { label: '목조 + 벽돌', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
+  { label: 'default', materials: undefined },
+  { label: 'RC', materials: { frame: 'rc', slab: 'rc', wall: 'rc' } },
+  { label: 'steel + panel', materials: { frame: 'steel', slab: 'rc', wall: 'panel' } },
+  { label: 'timber + brick', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
 ];
 
 for (const { label, materials } of MATERIALS) {
@@ -28,9 +28,9 @@ for (const { label, materials } of MATERIALS) {
   const floorsText = r.floorDamage.map((f) => `${f.floor}:${Math.round(f.ratio * 100)}`).join(' ');
   const c = r.damageByCause;
   console.log(
-    `${label.padEnd(8)} | 붕괴 ${Math.round(r.collapsedRatio * 100)}% 층 ${r.floorsLost}` +
-      ` | 층별% ${floorsText} | 원인 지진${Math.round(c.scenario * 100)}/충돌${Math.round(c.collision * 100)}/잔해${Math.round(c.debris * 100)}` +
-      ` | 붕괴진행 ${r.collapseTime?.toFixed(1) ?? '-'}s | ${(steps / 60).toFixed(1)}s ${ms.toFixed(1)}ms/단계`,
+    `${label.padEnd(8)} | collapsed ${Math.round(r.collapsedRatio * 100)}% floors ${r.floorsLost}` +
+      ` | per floor % ${floorsText} | cause quake ${Math.round(c.scenario * 100)}/impact ${Math.round(c.collision * 100)}/debris ${Math.round(c.debris * 100)}` +
+      ` | collapse time ${r.collapseTime?.toFixed(1) ?? '-'}s | ${(steps / 60).toFixed(1)}s ${ms.toFixed(1)} ms/step`,
   );
   sim.dispose();
 }

@@ -1,12 +1,12 @@
 /**
- * [B · 보고서 ①] 이번 시뮬레이션 로그 분석
+ * [B · Report ①] Analysis of the current simulation log
  *
- * 시뮬레이션이 남긴 이벤트 기록(sim.getHistory())과 결과로 다음을 계산합니다.
- *   - 진행 시간표: 시나리오 → 첫 손상 → 첫 구조 부재 파괴 → 마지막 붕괴 → 정지
- *   - 붕괴 원인: 직접 피해(시나리오 · 충돌 · 잔해 무게)로 부서진 부재 vs 지지를 잃어 연쇄로 떨어진 부재
- *   - 연쇄 배율 = 연쇄로 떨어진 구조 부재 수 / 직접 부서진 구조 부재 수
- *   - 연쇄를 가장 크게 일으킨 부재 (그 부재가 부서진 직후 지지를 잃고 떨어진 부재 수)
- *   - 층별 피해 · 층이 무너진 순서 · 시간에 따른 붕괴 곡선과 최고 붕괴 속도
+ * From the event history (sim.getHistory()) and the results it computes:
+ *   - timeline: scenario → first damage → first structural failure → last collapse → rest
+ *   - collapse causes: parts broken directly (scenario, impacts, debris load) vs parts that fell in a cascade after losing support
+ *   - cascade ratio = structural parts lost in the cascade / structural parts broken directly
+ *   - the parts that triggered the largest cascades (parts that lost support right after each one broke)
+ *   - per-floor damage, the order floors collapsed, the collapse curve over time and the peak collapse rate
  */
 
 import { BUILDING_TYPES, MATERIALS, SCENARIOS } from '../../data/ids.js';
@@ -40,7 +40,7 @@ const KIND_LABELS = {
 
 const isStructural = (p) => p && p.structural && p.kind !== 'fragment';
 
-/** 시나리오 한 줄 설명 */
+/** One-line scenario description */
 function scenarioText(s) {
   const label = SCENARIOS[s.type]?.label ?? s.type;
   const value = scenarioValue(s);
@@ -68,7 +68,7 @@ export function analyzeLog({ history, results, parts, spec }) {
   );
   const lastCollapse = collapseEvents[collapseEvents.length - 1];
 
-  // 직접 파괴 (원인별) vs 연쇄 (지지 상실)
+  // direct failures (by cause) vs cascade (support loss)
   const directByCause = { scenario: 0, collision: 0, debris: 0, removed: 0 };
   let cascade = 0;
   const triggerCount = new Map();
@@ -85,7 +85,7 @@ export function analyzeLog({ history, results, parts, spec }) {
     .slice(0, 5)
     .map(([id, count]) => ({ part: byId.get(id), count }));
 
-  // 종류별 · 층별 집계 (처음부터 있던 구조 부재 기준)
+  // counts per kind and floor (structural parts present from the start)
   const structural = parts.filter(isStructural);
   const kinds = {};
   for (const p of structural) {
@@ -97,7 +97,7 @@ export function analyzeLog({ history, results, parts, spec }) {
   const glass = parts.filter((p) => p.kind === 'window');
   const glassBroken = glass.filter((p) => p.state === 'failed').length;
 
-  // 층이 무너진 순서: 그 층 바닥판 · 지붕이 모두 무너진 시각
+  // order of floor collapse: when all of a floor's slabs and roof pieces had collapsed
   const slabTime = new Map();
   for (const e of collapseEvents) {
     const p = byId.get(e.partId);
@@ -115,7 +115,7 @@ export function analyzeLog({ history, results, parts, spec }) {
   }
   floorLost.sort((a, b) => a.t - b.t);
 
-  // 붕괴 곡선 · 최고 붕괴 속도 (0.5초 간격 표본)
+  // collapse curve and peak collapse rate (samples every 0.5 s)
   const samples = history.samples.map((s) => ({ ...s, t: rel(s.t) }));
   let peakRate = 0;
   let peakAt = null;
@@ -161,7 +161,7 @@ export function analyzeLog({ history, results, parts, spec }) {
   };
 }
 
-/** 분석 결과에서 사람이 읽는 결론 문장 */
+/** Human-readable conclusions from the analysis (Korean, shown in the report) */
 function findings(a) {
   const out = [];
   const r = a.results;
@@ -371,7 +371,7 @@ export function renderLogReport(a) {
   });
 }
 
-/** 원자료: 이벤트 기록 전체 */
+/** Raw data: the full event history */
 export function logCsv(a) {
   const rows = [
     ['시각(초)', '사건', '부재 ID', '부재', '종류', '층', '재료', '원인', '연쇄를 일으킨 부재'],

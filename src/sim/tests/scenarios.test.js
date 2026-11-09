@@ -10,7 +10,7 @@ const run = (sim, seconds) => {
   for (let i = 0; i < seconds * 60; i++) sim.step(1 / 60);
 };
 
-test('유리는 지지를 잃으면 강체 없이 깨지고 glass 이펙트를 냄', () => {
+test('glass shatters without rigid bodies on support loss and emits a glass effect', () => {
   const glass = createPart({
     id: 'win-a',
     kind: 'window',
@@ -26,11 +26,11 @@ test('유리는 지지를 잃으면 강체 없이 깨지고 glass 이펙트를 �
   assert.equal(glass.state, 'failed');
   assert.ok(events.some(([n]) => n === 'part:failed'));
   assert.ok(events.some(([n, p]) => n === 'impact' && p.kind === 'glass'));
-  assert.ok(!events.some(([n]) => n === 'part:added'), '유리 조각 강체를 만들지 않음');
+  assert.ok(!events.some(([n]) => n === 'part:added'), 'no rigid bodies for glass pieces');
   sim.dispose();
 });
 
-test('지진: 서 있는 부재가 흔들리고, 끝나면 원래 위치 · 고정 강체로 돌아옴', () => {
+test('earthquake: standing parts sway and return to their position as static bodies afterwards', () => {
   const parts = makeBuilding({
     type: 'apartment',
     floors: 3,
@@ -45,7 +45,7 @@ test('지진: 서 있는 부재가 흔들리고, 끝나면 원래 위치 · 고�
     sim.step(1 / 60);
     moved = Math.max(moved, Math.abs(roof.position[0] - start[0]));
   }
-  assert.ok(moved > 0.1, `지붕이 흔들림 (${moved.toFixed(2)} m)`);
+  assert.ok(moved > 0.1, `the roof sways (${moved.toFixed(2)} m)`);
   assert.equal(roof.sim.body.type, CANNON.Body.KINEMATIC);
   run(sim, 7);
   assert.ok(sim.getResults().finished);
@@ -56,7 +56,7 @@ test('지진: 서 있는 부재가 흔들리고, 끝나면 원래 위치 · 고�
   sim.dispose();
 });
 
-test('지진: 벽 없는 필로티 1층은 벽이 있는 위층보다 층 전단비가 큼 (연약층)', () => {
+test('earthquake: a wall-less piloti ground floor has a higher story shear ratio than the walled floors above (soft story)', () => {
   const parts = makeBuilding({
     type: 'piloti',
     floors: 4,
@@ -66,13 +66,16 @@ test('지진: 벽 없는 필로티 1층은 벽이 있는 위층보다 층 전단
     parts
       .filter((p) => p.floor === floor && (p.kind === 'column' || p.kind === 'wall'))
       .reduce((s, p) => s + shearCapacity(p, 'x', 3), 0);
-  assert.ok(cap(2) > cap(1) * 2, `1층 ${cap(1).toFixed(0)} kN, 2층 ${cap(2).toFixed(0)} kN`);
+  assert.ok(
+    cap(2) > cap(1) * 2,
+    `floor 1 ${cap(1).toFixed(0)} kN, floor 2 ${cap(2).toFixed(0)} kN`,
+  );
   assert.equal(envelope(0), 0);
   assert.equal(envelope(3), 1);
   assert.equal(envelope(8), 0);
 });
 
-test('결과: 붕괴 진행 시간 · 층별 피해율 · 원인별 피해', () => {
+test('results: collapse time, per-floor damage, damage by cause', () => {
   const parts = makeBuilding({ type: 'house', floors: 2 });
   const sim = createSimulation(parts, { emit: () => {} });
   const column = parts.find((p) => p.kind === 'column' && p.floor === 2);
@@ -91,7 +94,7 @@ test('결과: 붕괴 진행 시간 · 층별 피해율 · 원인별 피해', () 
   sim.dispose();
 });
 
-test('횡지지: 보 · 바닥판을 모두 잃은 위층 기둥은 쓰러지고, 땅에 선 1층 기둥은 남음', async () => {
+test('lateral bracing: an upper column with no beams or slabs left topples, a ground-floor column stays', async () => {
   const { buildDependents, isLaterallyStable } = await import('../structure.js');
   const lower = createPart({
     id: 'c1',
@@ -123,25 +126,28 @@ test('횡지지: 보 · 바닥판을 모두 잃은 위층 기둥은 쓰러지고
   const parts = [lower, upper, beam];
   const byId = new Map(parts.map((p) => [p.id, p]));
   const deps = buildDependents(parts);
-  assert.ok(isLaterallyStable(upper, byId, deps), '아래 이음부의 보가 잡아 줌');
+  assert.ok(isLaterallyStable(upper, byId, deps), 'the beam at the lower joint braces it');
   beam.state = 'settled';
-  assert.ok(!isLaterallyStable(upper, byId, deps), '잡아 줄 부재가 없음 → 쓰러짐');
-  assert.ok(isLaterallyStable(lower, byId, deps), '1층 기둥은 기초에 고정');
+  assert.ok(!isLaterallyStable(upper, byId, deps), 'nothing braces it → topples');
+  assert.ok(
+    isLaterallyStable(lower, byId, deps),
+    'a ground-floor column is fixed to its foundation',
+  );
 });
 
-test('시나리오 크기: 실제 단위 환산', async () => {
+test('scenario size: real-world unit conversion', async () => {
   const m = await import('../scenarioScale.js');
   assert.match(m.describeScenario('impact', 43).headline, /시속 43km/);
-  assert.ok(Math.abs(m.blast(1).radius - 7) < 1e-9, 'TNT 1kg → 반경 7m');
-  // 규모 6.0, 10km → 약 0.22 g (국내 설계지진 수준)
+  assert.ok(Math.abs(m.blast(1).radius - 7) < 1e-9, '1 kg TNT → 7 m radius');
+  // M 6.0 at 10 km → about 0.22 g (Korean design earthquake level)
   assert.ok(Math.abs(m.pgaFromMagnitude(6, 10) - 0.22) < 0.01);
-  assert.ok(m.pgaFromMagnitude(7, 10) > m.pgaFromMagnitude(7, 50), '멀수록 약함');
+  assert.ok(m.pgaFromMagnitude(7, 10) > m.pgaFromMagnitude(7, 50), 'weaker with distance');
   assert.match(m.describeScenario('earthquake', 6, 10).headline, /진도 Ⅶ/);
   assert.match(m.describeScenario('fire', 30).headline, /30분/);
   assert.equal(m.mmiFromPga(0.25).level, 'Ⅶ');
-  // 로그 눈금 막대 왕복
+  // log-scale slider round trip
   const s = m.SCALES.explosion;
   assert.ok(Math.abs(m.valueFromSlider(s, m.sliderFromValue(s, 10)) - 10) < 0.5);
-  // 이전 방식(intensity) 호환
+  // old format (intensity) still accepted
   assert.equal(m.scenarioValue({ type: 'fire', intensity: 0.5 }), 10);
 });

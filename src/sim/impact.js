@@ -1,52 +1,52 @@
 /**
- * [B · 시뮬레이션] 충돌 피해 · 잔해 하중 모델 (순수 함수 — 물리 엔진과 무관하게 테스트 가능)
+ * [B · Simulation] Impact damage and debris load model (pure functions — testable without the physics engine)
  *
- * 단위: 질량 t(톤), 속도 m/s, 에너지 kJ (= t·m²/s²), 힘 kN, 응력 MPa, 탄성계수 GPa, 길이 m
+ * Units: mass t (tonnes), speed m/s, energy kJ (= t·m²/s²), force kN, stress MPa, modulus GPa, length m
  *
- * ── 1. 충돌 피해 ───────────────────────────────────────────────
- *   충돌 에너지       E  = ½ · m · vₙ²                       (vₙ: 접촉면 수직 방향 충돌 속도)
- *   흡수 에너지       Eₐ = E · (1 − e²)                       (e: 맞은 부재 재료의 반발 계수)
- *   맞은 부재 몫      Eₜ = Eₐ · SHARE                         (두 물체가 나눠 흡수, SHARE = 0.5)
- *   흡수 능력         U  = u · V,  u = σ² / (2E) · μ · solid  (변형 에너지 밀도 × 연성 × 실체 비율)
- *   체력 감소         Δhp = Eₜ · f(위치, 방향) / U
+ * ── 1. Impact damage ──────────────────────────────────────────────
+ *   Impact energy      E  = ½ · m · vₙ²                       (vₙ: impact speed normal to the contact)
+ *   Absorbed energy    Eₐ = E · (1 − e²)                       (e: restitution of the target material)
+ *   Target's share     Eₜ = Eₐ · SHARE                         (both bodies absorb it, SHARE = 0.5)
+ *   Energy capacity    U  = u · V,  u = σ² / (2E) · μ · solid  (strain energy density × ductility × solid ratio)
+ *   hp loss            Δhp = Eₜ · f(location, direction) / U
  *
- * ── 2. 충돌 위치 · 방향 계수 f ──────────────────────────────────
- *   보 · 판의 휨 모멘트는 집중하중 위치 ξ(0~1, 지점 → 반대 지점)에 따라 M(ξ) ∝ ξ(1−ξ),
- *   가운데(ξ = 0.5)에서 최대입니다. 이를 b(ξ) = 4ξ(1−ξ) (0~1)로 정규화해 씁니다.
- *   지점 근처는 휨 대신 전단이 지배하므로 바닥값을 둡니다.
- *     보                         f = 0.4 + 0.6 · b(ξ_길이)
- *     판(바닥 · 지붕 · 벽 · 창)  면에 수직 충돌: f = 0.4 + 0.6 · b(ξ₁) · b(ξ₂)
- *                                면을 따라 스치는 충돌: f = 0.4
- *     기둥                       위에서 누르는 축방향 충돌: f = 0.35 (기둥은 축하중용으로 설계됨)
- *                                옆에서 치는 충돌: f = 0.5 + 1.0 · b(ξ_높이) (휨에 약함, 최대 1.5)
+ * ── 2. Location / direction factor f ────────────────────────────────
+ *   The bending moment of a beam or plate under a point load at ξ (0–1, support → opposite support) is M(ξ) ∝ ξ(1−ξ),
+ *   largest at mid-span (ξ = 0.5). It is normalized as b(ξ) = 4ξ(1−ξ) (0–1).
+ *   Near supports shear governs instead of bending, so there is a floor value.
+ *     beam                         f = 0.4 + 0.6 · b(ξ_length)
+ *     plate (slab, roof, wall, window)  out-of-plane hit: f = 0.4 + 0.6 · b(ξ₁) · b(ξ₂)
+ *                                in-plane glancing hit: f = 0.4
+ *     column                       axial hit from above: f = 0.35 (columns are designed for axial load)
+ *                                lateral hit: f = 0.5 + 1.0 · b(ξ_height) (weak in bending, up to 1.5)
  *
- * ── 3. 쌓인 잔해 하중 ──────────────────────────────────────────
- *   모든 수평 부재는 설계하중(KDS 41 10 15 주거 활하중 L = 2.0 kN/m²)을 견디도록 설계되었다고 가정
- *     고정하중   D = 밀도 · g · 두께
- *     붕괴 내력  q_u = γ · (1.2D + 1.6L)                   (γ = 1.8: 강도감소계수 · 재료 초과강도 · 여유)
- *     여유 하중  q_r = q_u − D                             (자기 무게를 빼고 더 얹을 수 있는 하중)
- *     내력       C = q_r · 평면 면적
- *   잔해 무게 W 가 C 를 넘으면 초과 비율만큼 서서히 부서짐:  Δhp/초 = OVERLOAD_RATE · (W/C − 1)
+ * ── 3. Piled debris load ───────────────────────────────────────────
+ *   Every horizontal member is assumed designed for the code load (KDS 41 10 15 residential live load L = 2.0 kN/m²)
+ *     dead load        D = density · g · thickness
+ *     collapse load    q_u = γ · (1.2D + 1.6L)                   (γ = 1.8: strength reduction · material overstrength · margin)
+ *     reserve load     q_r = q_u − D                             (load it can carry beyond its own weight)
+ *     capacity         C = q_r · plan area
+ *   When debris weight W exceeds C, the member breaks gradually:  Δhp/s = OVERLOAD_RATE · (W/C − 1)
  *
- * 근거와 한계는 src/sim/B_NOTES.md 를 보세요.
+ * Sources and limits: src/sim/B_NOTES.md.
  */
 
 export const G = 9.81;
-/** 충돌 에너지 중 맞은 부재가 흡수하는 몫 (나머지는 떨어진 부재가 흡수) */
+/** Share of the impact energy absorbed by the target (the falling part absorbs the rest) */
 export const SHARE = 0.5;
-/** 이보다 느린 충돌(m/s)은 무시 — 서로 기대어 미세하게 떨리는 접촉 제외 */
+/** Impacts slower than this (m/s) are ignored — excludes jittering contacts between resting parts */
 export const MIN_IMPACT_SPEED = 1.0;
-/** 설계 활하중 (kN/m², KDS 41 10 15 주거용) */
+/** Design live load (kN/m², KDS 41 10 15 residential) */
 export const LIVE_LOAD = 2.0;
-/** 하중계수 조합 1.2D + 1.6L 에 곱하는 붕괴 여유 배율 */
+/** Collapse margin applied to the 1.2D + 1.6L load combination */
 export const COLLAPSE_MARGIN = 1.8;
-/** 하중 초과 시 초당 체력 감소 배율 (50% 초과 → 1초에 체력 1 감소) */
+/** hp lost per second per unit of overload (50% over → 1 hp per second) */
 export const OVERLOAD_RATE = 2.0;
 
 const bend = (xi) => 4 * xi * (1 - xi);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
-/** 재료의 단위 부피당 흡수 능력 u (kJ/m³) = σ²/(2E) · μ · solid  (σ MPa, E GPa → kJ/m³) */
+/** Energy capacity per unit volume u (kJ/m³) = σ²/(2E) · μ · solid  (σ MPa, E GPa → kJ/m³) */
 export function energyDensity(phys) {
   if (!phys?.sigma || !phys?.modulus) return 10;
   return (
@@ -54,19 +54,19 @@ export function energyDensity(phys) {
   );
 }
 
-/** 부재 하나의 흡수 능력 U (kJ) */
+/** Energy capacity U of one part (kJ) */
 export function energyCapacity(part, phys) {
   const volume = part.size[0] * part.size[1] * part.size[2];
   return Math.max(0.05, energyDensity(phys) * volume);
 }
 
-/** 충돌로 맞은 부재가 흡수하는 에너지 Eₜ (kJ) */
+/** Energy Eₜ absorbed by the hit part (kJ) */
 export function absorbedEnergy(mass, normalSpeed, targetPhys) {
   const e = targetPhys?.restitution ?? 0.2;
   return 0.5 * mass * normalSpeed * normalSpeed * (1 - e * e) * SHARE;
 }
 
-/** 단위 쿼터니언 (x, y, z, w)으로 벡터 v를 회전: v' = v + 2w(u×v) + 2u×(u×v), u = (x, y, z) */
+/** Rotates v by the unit quaternion (x, y, z, w): v' = v + 2w(u×v) + 2u×(u×v), u = (x, y, z) */
 function rotate(v, x, y, z, w) {
   const tx = 2 * (y * v[2] - z * v[1]);
   const ty = 2 * (z * v[0] - x * v[2]);
@@ -78,21 +78,21 @@ function rotate(v, x, y, z, w) {
   ];
 }
 
-/** 쿼터니언 q의 회전을 벡터 v에 적용 (부재 로컬 → 월드) */
+/** Applies quaternion q to vector v (part local → world) */
 export function toWorld(v, q) {
   return rotate(v, q[0], q[1], q[2], q[3]);
 }
 
-/** 쿼터니언 q의 역회전을 벡터 v에 적용 (월드 → 부재 로컬) */
+/** Applies the inverse of quaternion q to vector v (world → part local) */
 export function toLocal(v, q) {
   return rotate(v, -q[0], -q[1], -q[2], q[3]);
 }
 
 /**
- * 충돌 위치 · 방향 계수 f
- * @param {import('../core/types.js').Part} part  맞은 부재
- * @param {[number,number,number]} point   충돌 지점 (월드 좌표)
- * @param {[number,number,number]} normal  충돌 방향 단위벡터 (월드 좌표)
+ * Location / direction factor f
+ * @param {import('../core/types.js').Part} part  the part that was hit
+ * @param {[number,number,number]} point   contact point (world)
+ * @param {[number,number,number]} normal  unit impact direction (world)
  */
 export function locationFactor(part, point, normal) {
   const rel = [
@@ -109,7 +109,7 @@ export function locationFactor(part, point, normal) {
     return axial ? 0.35 : 0.5 + 1.0 * bend(xi[1]);
   }
 
-  // 가장 얇은 축 = 두께 방향, 나머지 두 축 = 판의 평면 (보는 가장 긴 축 = 길이 방향)
+  // thinnest axis = thickness, the other two = the plate's plane (for a beam the longest axis = its length)
   const order = [0, 1, 2].sort((a, b) => part.size[a] - part.size[b]);
   const [thin, mid, long] = order;
   if (part.kind === 'beam') return 0.4 + 0.6 * bend(xi[long]);
@@ -119,7 +119,7 @@ export function locationFactor(part, point, normal) {
   return 0.4 + 0.6 * bend(xi[mid]) * bend(xi[long]);
 }
 
-/** 충돌 한 번의 체력 감소량 */
+/** hp lost from one impact */
 export function impactDamage({ mass, normalSpeed, target, targetPhys, point, normal }) {
   if (normalSpeed < MIN_IMPACT_SPEED) return 0;
   const energy = absorbedEnergy(mass, normalSpeed, targetPhys);
@@ -127,7 +127,7 @@ export function impactDamage({ mass, normalSpeed, target, targetPhys, point, nor
 }
 
 /**
- * 점에서 부재 상자 표면까지의 거리 (부재 회전 반영). 점이 상자 안이면 0.
+ * Distance from a point to the part's box surface (rotation-aware). 0 if the point is inside.
  * @param {[number,number,number]} point
  */
 export function distanceToBox(point, part) {
@@ -143,7 +143,7 @@ export function distanceToBox(point, part) {
   return Math.sqrt(sum);
 }
 
-/** 수평 부재(바닥판 · 지붕판 · 보 · 수평 장식판)인지 — 잔해 하중 판정 대상 */
+/** Whether a part is a horizontal member (slab, roof, beam, horizontal decor) — subject to debris load */
 export function isHorizontalMember(part) {
   if (part.kind === 'slab' || part.kind === 'roof' || part.kind === 'beam') return true;
   if (part.kind === 'column' || part.kind === 'fragment') return false;
@@ -151,7 +151,7 @@ export function isHorizontalMember(part) {
   return thin === 1;
 }
 
-/** 수평 부재가 자기 무게 외에 더 버틸 수 있는 하중 C (kN) */
+/** Load C (kN) a horizontal member can carry beyond its own weight */
 export function reserveCapacity(part, phys) {
   const density = phys?.density ?? 1;
   const thickness = Math.min(...part.size);
@@ -161,12 +161,12 @@ export function reserveCapacity(part, phys) {
   return Math.max(0.5, (ultimate - deadLoad) * area);
 }
 
-/** 평면(위에서 본) 면적 m² — 회전은 무시한 근사 */
+/** Plan area in m² (seen from above) — approximation ignoring rotation */
 function planArea(part) {
   return part.size[0] * part.size[2];
 }
 
-/** 잔해 하중 W(kN)가 내력 C를 넘을 때 dt 동안의 체력 감소 */
+/** hp lost over dt when debris load W (kN) exceeds capacity C */
 export function overloadDamage(loadKN, capacityKN, dt) {
   if (loadKN <= capacityKN) return 0;
   return OVERLOAD_RATE * (loadKN / capacityKN - 1) * dt;

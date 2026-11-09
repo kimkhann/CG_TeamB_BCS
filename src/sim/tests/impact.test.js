@@ -1,5 +1,5 @@
-// B 단계: 충돌 피해 · 잔해 하중 모델 검증
-// 실행: node --test src/sim/tests/impact.test.js
+// Stage B: impact damage and debris load model
+// Run: node --test src/sim/tests/impact.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPart } from '../../core/types.js';
@@ -23,23 +23,23 @@ const slab = (material = 'rc') =>
     size: [2, 0.25, 2],
     position: [0, 0, 0],
   });
-const v3m = Math.sqrt(2 * 9.81 * 3); // 한 층(3m) 자유낙하 속도
+const v3m = Math.sqrt(2 * 9.81 * 3); // free-fall speed over one story (3 m)
 
-test('재료별 흡수 능력: 강재 > 철근콘크리트 > 목재 > 벽돌 > 패널 > 유리', () => {
+test('energy capacity by material: steel > RC > timber > brick > panel > glass', () => {
   const order = ['steel', 'rc', 'wood', 'brick', 'panel', 'window'].map((m) => energyDensity(P[m]));
   for (let i = 1; i < order.length; i++) assert.ok(order[i - 1] > order[i]);
 });
 
-test('충돌 위치: 판 가운데 충돌이 가장자리보다 피해가 큼', () => {
+test('hit location: a mid-plate hit does more damage than an edge hit', () => {
   const s = slab();
   const center = locationFactor(s, [0, 0.12, 0], [0, -1, 0]);
   const edge = locationFactor(s, [0.95, 0.12, 0.95], [0, -1, 0]);
   assert.equal(center, 1);
   assert.ok(edge < 0.5);
-  assert.equal(locationFactor(s, [0, 0, 0], [1, 0, 0]), 0.4, '면을 따라 스치는 충돌');
+  assert.equal(locationFactor(s, [0, 0, 0], [1, 0, 0]), 0.4, 'in-plane glancing hit');
 });
 
-test('충돌 방향: 기둥은 옆에서 가운데를 맞을 때 가장 약하고, 위에서 누를 때 강함', () => {
+test('hit direction: a column is weakest when hit mid-height from the side and strongest when pressed from above', () => {
   const col = createPart({
     id: 'c',
     kind: 'column',
@@ -55,26 +55,26 @@ test('충돌 방향: 기둥은 옆에서 가운데를 맞을 때 가장 약하�
   assert.ok(lateralMid > lateralBase && lateralBase > axial);
 });
 
-test('같은 낙하라도 약한 재료가 더 크게 부서지고, 무거운 낙하물이 더 크게 부숨', () => {
+test('for the same fall, weaker targets break more and heavier debris breaks more', () => {
   const hit = (fallingMaterial, targetMaterial) =>
     impactDamage({
-      mass: P[fallingMaterial].density * 1, // 2m × 0.25m × 2m 바닥판 한 조각
+      mass: P[fallingMaterial].density * 1, // one 2m × 0.25m × 2m slab piece
       normalSpeed: v3m,
       target: slab(targetMaterial),
       targetPhys: P[targetMaterial],
       point: [0, 0.12, 0],
       normal: [0, -1, 0],
     });
-  assert.ok(hit('rc', 'wood') > hit('rc', 'rc'), '목조 바닥이 RC 바닥보다 약함');
-  assert.ok(hit('rc', 'rc') > hit('wood', 'rc'), 'RC 낙하물이 목재 낙하물보다 무거움');
-  assert.ok(hit('rc', 'wood') >= 1, 'RC 바닥판이 한 층 떨어지면 목조 바닥은 부서짐');
+  assert.ok(hit('rc', 'wood') > hit('rc', 'rc'), 'a timber floor is weaker than an RC floor');
+  assert.ok(hit('rc', 'rc') > hit('wood', 'rc'), 'falling RC is heavier than falling timber');
+  assert.ok(hit('rc', 'wood') >= 1, 'an RC slab falling one story breaks a timber floor');
   assert.ok(
     hit('rc', 'rc') > 0.5 && hit('rc', 'rc') < 1,
-    'RC끼리는 크게 손상되지만 한 번에 부서지지는 않음',
+    'RC on RC is heavily damaged but not broken in one hit',
   );
 });
 
-test('느린 접촉은 무시', () => {
+test('slow contacts are ignored', () => {
   const amount = impactDamage({
     mass: 10,
     normalSpeed: MIN_IMPACT_SPEED * 0.9,
@@ -86,11 +86,14 @@ test('느린 접촉은 무시', () => {
   assert.equal(amount, 0);
 });
 
-test('잔해 하중: 설계 여유 하중 이하는 버티고, 넘으면 초과 비율만큼 부서짐', () => {
+test('debris load: holds up to the design reserve and breaks in proportion to the overload', () => {
   const capacity = reserveCapacity(slab('rc'), P.rc);
-  // 2m × 2m RC 바닥판: 약 50 kN (≈ 5톤) 여유
+  // 2m × 2m RC slab: about 50 kN (≈ 5 t) reserve
   assert.ok(capacity > 40 && capacity < 60);
-  assert.ok(reserveCapacity(slab('wood'), P.wood) < capacity, '가벼운 목조 바닥은 여유가 작음');
+  assert.ok(
+    reserveCapacity(slab('wood'), P.wood) < capacity,
+    'a light timber floor has less reserve',
+  );
   assert.equal(overloadDamage(capacity * 0.9, capacity, 1), 0);
   assert.ok(Math.abs(overloadDamage(capacity * 1.5, capacity, 1) - 1) < 1e-9);
 });
@@ -116,20 +119,20 @@ function runPile(block) {
     position: [0, 0, 0],
     supportedBy: ['ground'],
   });
-  // 바닥판이 공중에 떠 있어도 땅에 붙은 것으로 취급되도록 위치만 올림
+  // raise the position only, so the slab counts as grounded even though it floats
   floor.position[1] = 2;
   block.position[1] += 2;
   const sim = createSimulation([floor, block], { emit: () => {} });
-  sim.runScenario({ type: 'impact', intensity: 0, target: null }); // 블록을 떨어뜨림
+  sim.runScenario({ type: 'impact', intensity: 0, target: null }); // drop the block
   for (let i = 0; i < 60 * 4; i++) sim.step(1 / 60);
   sim.dispose();
   return floor;
 }
 
-test('통합: 무거운 잔해가 얹히면 바닥판이 부서지고, 가벼운 잔해는 버팀', () => {
-  const heavy = runPile(blockAbove('rc', [1.8, 1.8, 1.8])); // ≈ 14톤
-  const light = runPile(blockAbove('wood', [1, 0.3, 1])); // ≈ 0.2톤
+test('integration: heavy debris breaks the slab, light debris does not', () => {
+  const heavy = runPile(blockAbove('rc', [1.8, 1.8, 1.8])); // ≈ 14 t
+  const light = runPile(blockAbove('wood', [1, 0.3, 1])); // ≈ 0.2 t
   assert.notEqual(heavy.state, 'intact');
-  assert.ok(heavy.hp < 0.5, `무거운 잔해 아래 바닥판 체력 ${heavy.hp}`);
+  assert.ok(heavy.hp < 0.5, `slab hp under heavy debris ${heavy.hp}`);
   assert.equal(light.state, 'intact');
 });

@@ -1,8 +1,8 @@
-// 화면 없이 보고서 만들기 (브라우저의 "보고서 만들기"와 같은 결과)
-// 사용법: node scripts/make-report.mjs <log|compare|keymembers> [type] [floors] [floor] [출력 폴더]
-//   예)   node scripts/make-report.mjs compare piloti 5
+// Builds a report without the UI (same output as the "Make report" button in the browser)
+// Usage: node scripts/make-report.mjs <log|compare|keymembers> [type] [floors] [floor] [output folder]
+//   e.g.  node scripts/make-report.mjs compare piloti 5
 //         node scripts/make-report.mjs keymembers piloti 5 1
-//         node scripts/make-report.mjs log piloti 5        (규모 6.5 · 10 km 지진을 돌린 기록으로)
+//         node scripts/make-report.mjs log piloti 5        (from a recorded M 6.5, 10 km earthquake run)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildReport } from '../src/sim/reports/index.js';
@@ -30,5 +30,5 @@ mkdirSync(out, { recursive: true });
 writeFileSync(join(out, `${report.baseName}.html`), report.html);
 writeFileSync(join(out, `${report.baseName}.csv`), report.csv);
 console.log(
-  `\n${report.title} → ${out}/${report.baseName}.html (${((performance.now() - t0) / 1000).toFixed(1)}초)`,
+  `\n${report.title} → ${out}/${report.baseName}.html (${((performance.now() - t0) / 1000).toFixed(1)} s)`,
 );

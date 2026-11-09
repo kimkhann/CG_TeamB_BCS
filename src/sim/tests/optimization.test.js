@@ -17,7 +17,7 @@ function plate() {
 }
 const triggerSupport = (sim) => sim.runScenario({ type: 'impact', intensity: 0, target: null });
 
-test('움직이는 강체가 없을 때 충돌 단계를 호출하지 않고, 낙하 시 다시 실행', () => {
+test('skips the collision step with no moving bodies and resumes when something falls', () => {
   const step = CANNON.World.prototype.step;
   let calls = 0;
   CANNON.World.prototype.step = function (...args) {
@@ -29,7 +29,7 @@ test('움직이는 강체가 없을 때 충돌 단계를 호출하지 않고, �
   try {
     for (let i = 0; i < 120; i++) sim.step(1 / 60);
     assert.equal(calls, 0);
-    assert.equal(sim.getResults().time.toFixed(1), '2.0', '관찰 시간은 계속 진행');
+    assert.equal(sim.getResults().time.toFixed(1), '2.0', 'observed time keeps advancing');
     triggerSupport(sim);
     sim.step(1 / 60);
     assert.equal(calls, 1);
@@ -40,7 +40,7 @@ test('움직이는 강체가 없을 때 충돌 단계를 호출하지 않고, �
   }
 });
 
-test('잠든 잔해는 좌표 복사를 멈추고 깨어나면 낙하/종료 판정을 복원', () => {
+test('sleeping debris stops copying positions and restores fall/finish checks on waking', () => {
   const p = plate();
   const sim = createSimulation([p], { emit: () => {} });
   try {
@@ -60,14 +60,14 @@ test('잠든 잔해는 좌표 복사를 멈추고 깨어나면 낙하/종료 판
     });
     for (let i = 0; i < 60; i++) sim.step(1 / 60);
     assert.equal(writes, 0);
-    // B 단계: 살짝 깨어난 정도(WAKE_SPEED 1 m/s 미만)는 '정지'를 유지 — 쌓인 잔해의 깨어남/잠듦 반복 방지
+    // Stage B: a light wake-up (below WAKE_SPEED 1 m/s) stays 'settled' — prevents wake/sleep churn in piled debris
     p.sim.body.wakeUp();
     p.sim.body.velocity.set(0.3, 0, 0);
     sim.step(1 / 60);
-    assert.ok(writes > 0, '깨어 있는 동안은 좌표를 반영');
+    assert.ok(writes > 0, 'positions are copied while awake');
     assert.equal(p.state, 'settled');
     assert.equal(sim.getResults().finished, true);
-    // 실제로 빠르게 움직이면 다시 '떨어지는 중'
+    // moving fast for real makes it 'falling' again
     p.sim.body.wakeUp();
     p.sim.body.velocity.set(3, 0, 0);
     sim.step(1 / 60);
@@ -78,7 +78,7 @@ test('잠든 잔해는 좌표 복사를 멈추고 깨어나면 낙하/종료 판
   }
 });
 
-test('고정 부재만 있어도 화재의 시간·피해·표시 이벤트는 계속 진행', () => {
+test('fire time, damage and effect events continue with only static parts', () => {
   const p = createPart({
     id: 'pillar',
     kind: 'column',
@@ -104,7 +104,7 @@ test('고정 부재만 있어도 화재의 시간·피해·표시 이벤트는 �
   }
 });
 
-test('대기 중 물리 생략이 이후 동일 시드의 낙하 궤적을 바꾸지 않음', () => {
+test('skipping idle physics does not change later fall trajectories for the same seed', () => {
   const a = plate(),
     b = plate();
   const immediate = createSimulation([a], { emit: () => {}, seed: 1 });

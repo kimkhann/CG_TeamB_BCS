@@ -264,7 +264,7 @@ select {
   font-family: monospace;
 }
 
-/* 세기 → 실제 크기 설명 (B 단계 추가) */
+/* Scenario size → real-world description (added in stage B) */
 .scale-value {
   float: right;
   color: #ff8a80;
@@ -289,7 +289,7 @@ select {
   margin-top: 4px;
 }
 
-/* 보고서 (B 단계 추가) */
+/* Reports (added in stage B) */
 .report-status {
   min-height: 1em;
 }

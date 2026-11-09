@@ -1,12 +1,12 @@
 /**
- * [B · 시뮬레이션] 화재 — 중심 주변 부재가 시간이 지날수록 약해짐
+ * [B · Simulation] Fire — parts around the center weaken over time
  *
- * 크기: 표준화재(ISO 834) 지속 시간 t 분 (sim/scenarioScale.js), 화면에서는 8초로 압축.
- *   부재의 내화 시간 t_R = 10분 / (1 − 내화성)  (data/materialPhysics.js)
- *   피해 = t / t_R × (1 − 거리/반경)  → 중심에서는 내화 시간만큼 타면 무너짐
- *   (재료 강도 배율은 쓰지 않음 — 내화 시간이 이미 재료 차이를 담고 있음)
- * 중심: 부재 또는 위치 대상, 반경: 위치 대상의 radius, 없으면 3m.
- * TODO(B): 불이 번지는 범위 확대
+ * Size: standard fire (ISO 834) duration t minutes (sim/scenarioScale.js), played back in 8 s.
+ *   part fire rating t_R = 10 min / (1 − fireResistance)  (data/materialPhysics.js)
+ *   damage = t / t_R × (1 − distance/radius)  → at the center a part fails after burning for its rating
+ *   (no strength multiplier — the fire rating already captures the material difference)
+ * Center: part or area target; radius: the area target's radius, otherwise 3 m.
+ * TODO(B): fire spread
  */
 
 import { EVENTS } from '../../core/events.js';
@@ -32,7 +32,7 @@ export function runFire(ctx, scenario) {
     }
     for (const { part, distance } of ctx.partsWithin(center, radius)) {
       const resistance = materialPhysics[part.material]?.fireResistance ?? 0.5;
-      const fireRating = 10 / Math.max(0.01, 1 - resistance); // 내화 시간 (분)
+      const fireRating = 10 / Math.max(0.01, 1 - resistance); // fire rating (min)
       ctx.damageRaw(part, (dt / duration) * (minutes / fireRating) * (1 - distance / radius));
     }
     return elapsed >= duration;

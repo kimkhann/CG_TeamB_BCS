@@ -1,14 +1,14 @@
 /**
- * [B · 시뮬레이션] 물리 월드 (cannon-es)
+ * [B · Simulation] Physics world (cannon-es)
  *
- * 🔧 임시 버전(베이스): 중력, 바닥, 수면(sleep) 기능, 부재 ↔ 강체 변환 도우미.
- * TODO(B): 재료별 접촉 재질, 충돌 이벤트로 충격량 계산, 성능 조정
+ * Gravity, ground plane, sleeping, and part ↔ body helpers.
+ * The ground is kept on world.ground so the earthquake scenario can move it.
  */
 
 import * as CANNON from 'cannon-es';
 import { materialPhysics } from '../data/materialPhysics.js';
 
-/** 처음부터 맞닿아 있는 부재끼리 튕겨 나가지 않도록 충돌 상자를 살짝 줄입니다. */
+/** Shrinks collision boxes slightly so parts that start in contact do not push each other apart. */
 const SHAPE_SHRINK = 0.97;
 
 export function createWorld() {
@@ -22,13 +22,13 @@ export function createWorld() {
   const ground = new CANNON.Body({ type: CANNON.Body.STATIC, shape: new CANNON.Plane() });
   ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
   world.addBody(ground);
-  world.ground = ground; // 지진 때 흔들기 위해 보관
+  world.ground = ground; // kept so the earthquake can shake it
 
   return world;
 }
 
 /**
- * 부재에 맞는 강체를 만듭니다. 처음에는 고정(STATIC) 상태입니다.
+ * Creates a body for a part. It starts STATIC.
  * @param {import('../core/types.js').Part} part
  */
 export function createBodyForPart(part) {
@@ -51,22 +51,22 @@ export function createBodyForPart(part) {
   return body;
 }
 
-/** 부재 질량 (t) = 밀도 × 부피 */
+/** Part mass (t) = density × volume */
 export function massOf(part) {
   const density = materialPhysics[part.material]?.density ?? 1;
   return Math.max(0.05, density * part.size[0] * part.size[1] * part.size[2]);
 }
 
-/** 고정 강체를 움직이는(DYNAMIC) 강체로 바꿉니다. */
+/** Turns a static body into a DYNAMIC one. */
 export function makeDynamic(body, mass) {
   body.type = CANNON.Body.DYNAMIC;
-  body.allowSleep = true; // 지진 중 KINEMATIC 이었다가 떨어지는 경우 되돌림
+  body.allowSleep = true; // restore if it was KINEMATIC during an earthquake
   body.mass = mass;
   body.updateMassProperties();
   body.wakeUp();
 }
 
-/** 강체의 위치 · 회전을 부재에 복사합니다. */
+/** Copies a body's position and rotation to its part. */
 export function copyBodyToPart(body, part) {
   part.position[0] = body.position.x;
   part.position[1] = body.position.y;

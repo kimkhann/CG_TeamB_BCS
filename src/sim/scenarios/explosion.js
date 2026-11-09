@@ -1,12 +1,12 @@
 /**
- * [B · 시뮬레이션] 폭발 — 중심에서 반경 안의 부재에 거리에 따라 피해 + 바깥으로 밀어냄
+ * [B · Simulation] Explosion — damages parts within the radius by distance and pushes them outward
  *
- * 중심: 부재 대상이면 그 부재 위치, 위치 대상이면 그 위치 (건물 내부의 빈 공간도 가능)
- * 크기: TNT 환산량 (kg, sim/scenarioScale.js) → 피해 반경 R = 7 · W^(1/3) m, 피해 배율 = (R − 2) / 6
- * 반경: 위치 대상의 radius, 없으면 R
+ * Center: the part's position for a part target, the given position for an area target (empty interior space is fine)
+ * Size: TNT equivalent (kg, sim/scenarioScale.js) → damage radius R = 7 · W^(1/3) m, damage factor = (R − 2) / 6
+ * Radius: the area target's radius, otherwise R
  *
- * 🔧 임시 버전(베이스)
- * TODO(B): 같은 층 우선, 벽 뒤 차폐, 폭풍 압력 표현
+ * Damage magnitude is still the base-stage rule.
+ * TODO(B): same-floor priority, shielding behind walls, blast pressure
  */
 
 import { EVENTS } from '../../core/events.js';
@@ -29,7 +29,7 @@ export function runExplosion(ctx, scenario) {
     radius,
   });
 
-  // 떨어지기 시작한 부재와 조각을 바깥으로 밀어냄
+  // push parts and fragments that started falling outward
   ctx.updateSupports();
   for (const part of ctx.parts) {
     if (part.state !== 'falling' || !part.sim.body) continue;

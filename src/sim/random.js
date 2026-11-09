@@ -1,8 +1,8 @@
 /**
- * [B · 시뮬레이션] 시드 고정 난수
+ * [B · Simulation] Seeded random numbers
  *
- * Math.random() 대신 이 함수를 쓰면, 같은 시드에서는 항상 같은 붕괴가 재현됩니다.
- * (다시 보기 · 재료 비교에 필요)
+ * Use this instead of Math.random() so the same seed always reproduces the same collapse
+ * (needed for replays and material comparisons).
  */
 
 export function createRandom(seed = 20261102) {

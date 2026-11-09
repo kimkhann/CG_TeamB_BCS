@@ -1,23 +1,23 @@
 /**
- * [B · 보고서 ③] 핵심 부재 지도 — "이 기둥 · 벽을 없애도 되는가"
+ * [B · Report ③] Key member map — "can this column or wall be removed?"
  *
- * 고른 층의 구조 기둥과 벽을 하나씩 없앤 건물을 각각 시뮬레이션하고, 두 가지로 평가합니다.
+ * Simulates the building once per removed column or wall on the chosen floor and rates each in two ways.
  *
- * (1) 수직 하중 — 연쇄 붕괴 (대체경로법: 미국 GSA 2016 · UFC 4-023-03 방식을 단순화)
- *     부재를 없앤 뒤 최대 8초(떨어지는 부재의 충돌 · 잔해 무게 포함) 동안 위층 바닥판이 얼마나 무너지는지
- *       인접 칸: 없앤 부재에서 한 칸(기둥 간격) 안의 바닥판 — 그 부재가 직접 받치던 범위
- *       확산 붕괴율 = 인접 칸 밖에서 무너진 바닥판 / 그 층과 위층의 전체 바닥판
- *     핵심  확산 붕괴율 ≥ 15%  (GSA 의 허용 붕괴 범위 15% 를 넘어 피해가 번짐 — 불균형 붕괴)
- *     주의  인접 칸 바닥이 무너짐 (피해가 직접 받치던 범위에 머묾)
- *     국부  바닥은 버티지만 다른 구조 부재가 무너짐
- *     여유  다른 구조 부재가 무너지지 않음
+ * (1) Vertical load — progressive collapse (alternate path method, simplified from GSA 2016 · UFC 4-023-03)
+ *     how much of the slabs above collapse within 8 s after removal (including impacts and debris load)
+ *       adjacent bays: slabs within one bay (column spacing) of the removed member — what it directly supported
+ *       spread ratio = slabs lost outside the adjacent bays / all slabs on that floor and above
+ *     critical  spread ratio ≥ 15%  (beyond the GSA 15% allowable collapse area — disproportionate collapse)
+ *     caution   adjacent-bay slabs collapse (damage stays within what it supported)
+ *     local     slabs hold but other structural parts collapse
+ *     safe      no other structural part collapses
  *
- * (2) 지진 저항 — 이 부재가 그 층의 층 전단 내력에서 차지하는 비율 (지진 시나리오와 같은 식)
- *     핵심 ≥ 10%, 주의 ≥ 5%, 국부 ≥ 2%, 여유 < 2%
- *     (이 모델에서 벽은 바닥의 수직 하중을 받지 않고 지진 때 옆으로 버티는 역할을 하므로,
- *      벽은 주로 (2)로 평가됩니다)
+ * (2) Seismic resistance — the member's share of that story's shear capacity (same formula as the earthquake scenario)
+ *     critical ≥ 10%, caution ≥ 5%, local ≥ 2%, safe < 2%
+ *     (in this model walls carry no slab load and only resist lateral force in a quake,
+ *      so walls are mostly rated by (2))
  *
- * 부재의 최종 등급 = 두 평가 중 더 나쁜 쪽
+ * Final grade = the worse of the two
  */
 
 import { BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
@@ -69,12 +69,12 @@ export function seismicGrade(share) {
 
 const worse = (a, b) => (ORDER.indexOf(a) <= ORDER.indexOf(b) ? a : b);
 
-/** 분석 대상: 그 층의 구조 기둥 · 벽 */
+/** Members analyzed: structural columns and walls on the floor */
 export function candidatesOf(parts, floor) {
   return parts.filter((p) => p.floor === floor && p.structural && isVertical(p));
 }
 
-/** 벽에 번호를 붙여 지도와 표에서 찾기 쉽게 */
+/** Numbers walls so they are easy to find on the map and in the table */
 function labelMembers(members) {
   let n = 0;
   return new Map(
@@ -85,7 +85,7 @@ function labelMembers(members) {
   );
 }
 
-/** 기둥 간격 (같은 층 기둥 사이의 가장 짧은 수평 거리) */
+/** Column spacing (shortest horizontal distance between columns on the floor) */
 function columnSpan(parts, floor) {
   const cols = parts.filter((p) => p.floor === floor && p.kind === 'column');
   let span = Infinity;
@@ -99,7 +99,7 @@ function columnSpan(parts, floor) {
   return Number.isFinite(span) ? span : 4.5;
 }
 
-/** 그 층의 방향별 층 전단 내력과 부재별 기여율 */
+/** Story shear capacity per direction and each member's share */
 function seismicShares(parts, floor) {
   const members = parts.filter((p) => p.floor === floor && isVertical(p));
   const storyHeight = Math.max(
@@ -126,7 +126,7 @@ function seismicShares(parts, floor) {
 export async function runKeyMembers(rawSpec, floor, onProgress = () => {}) {
   const spec = normalizeSpec(rawSpec);
   const { parts: base } = freshSimulation(spec);
-  // 위아래로 나뉜 벽 패널은 같은 자리의 벽 하나로 묶어 함께 없앰 (실제로 벽을 철거하는 단위)
+  // wall panels stacked at the same spot are grouped and removed together (the unit a real wall removal takes out)
   const groups = new Map();
   for (const p of candidatesOf(base, floor)) {
     const key =
@@ -151,8 +151,8 @@ export async function runKeyMembers(rawSpec, floor, onProgress = () => {}) {
       Math.abs(s.position[0] - m.position[0]) <= span + m.size[0] / 2 + 0.1 &&
       Math.abs(s.position[2] - m.position[2]) <= span + m.size[2] / 2 + 0.1;
     sim.removeParts(m.ids);
-    const immediate = slabs.filter((s) => !alive(s)).length; // 지지 상실만으로 바로 무너진 바닥판
-    // 위층 바닥이 모두 무너지면 더 볼 것이 없으므로 일찍 끝냄
+    const immediate = slabs.filter((s) => !alive(s)).length; // slabs lost to support loss alone, immediately
+    // stop early once every slab above is gone — nothing more to learn
     await runUntil(sim, {
       maxSeconds: 8,
       minSeconds: 0.5,
@@ -193,7 +193,7 @@ export async function runKeyMembers(rawSpec, floor, onProgress = () => {}) {
     sim.dispose();
   }
   onProgress(members.length, members.length, '완료');
-  const outline = base.filter((p) => p.floor === floor && isSlab(p)); // 지도 배경
+  const outline = base.filter((p) => p.floor === floor && isSlab(p)); // map background
   return { spec, floor, results, outline };
 }
 

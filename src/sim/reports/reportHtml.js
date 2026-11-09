@@ -1,8 +1,8 @@
 /**
- * [B · 보고서] 공용 도우미 — 보고서 HTML 틀, SVG 차트, CSV
+ * [B · Report] Shared helpers — report HTML shell, SVG charts, CSV
  *
- * 보고서는 외부 파일 없이 열리는 HTML 한 장입니다 (글꼴 · 그림 모두 안에 포함).
- * 브라우저에서 "인쇄 → PDF로 저장"하면 PDF가 됩니다.
+ * A report is a single HTML page that opens without external files (fonts and graphics included).
+ * "Print → Save as PDF" in the browser turns it into a PDF.
  */
 
 export const esc = (v) =>
@@ -16,7 +16,7 @@ export const pct = (v, digits = 0) => `${(v * 100).toFixed(digits)}%`;
 export const num = (v, digits = 1) =>
   v === null || v === undefined || Number.isNaN(v) ? '-' : Number(v).toFixed(digits);
 
-/** 상태 · 등급 색 (인쇄에서도 구분되도록 밝기 차이를 둠) */
+/** State and grade colors (with different lightness so they stay distinguishable in print) */
 export const COLORS = {
   red: '#c8372d',
   orange: '#e08a1e',
@@ -44,7 +44,7 @@ export const CAUSE_LABELS = {
 };
 
 /**
- * 보고서 한 장
+ * One report page
  * @param {{ title:string, subtitle?:string, meta?:[string,string][], summary?:string[], body:string }} o
  */
 export function page({ title, subtitle = '', meta = [], summary = [], body }) {
@@ -132,7 +132,7 @@ export const legend = (items) =>
   `<div class="legend">${items.map(([label, color]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('')}</div>`;
 
 /**
- * 가로 막대 차트
+ * Horizontal bar chart
  * @param {{label:string, value:number, color?:string, text?:string}[]} items
  */
 export function barChart(items, { max, width = 640, unit = '' } = {}) {
@@ -153,7 +153,7 @@ export function barChart(items, { max, width = 640, unit = '' } = {}) {
 }
 
 /**
- * 누적 비율 막대 (원인별 피해 등)
+ * Stacked share bars (damage by cause, etc.)
  * @param {{label:string, parts:{key:string, value:number}[]}[]} rows
  */
 export function stackedBars(rows, colors, labels, { width = 640 } = {}) {
@@ -187,10 +187,10 @@ export function stackedBars(rows, colors, labels, { width = 640 } = {}) {
 }
 
 /**
- * 꺾은선 차트
+ * Line chart
  * @param {{name:string, color:string, points:[number,number][]}[]} series
  */
-/** 4등분 눈금이 정수로 떨어지는 보기 좋은 최댓값 */
+/** A nice maximum whose quarter ticks land on round numbers */
 function niceCeil(v) {
   const step = 10 ** Math.floor(Math.log10(v / 4));
   for (const k of [1, 2, 2.5, 5, 10]) if (k * step * 4 >= v) return k * step * 4;
@@ -229,7 +229,7 @@ export function lineChart(
 }
 
 /**
- * 평면도 (위에서 본 그림)
+ * Floor plan (seen from above)
  * @param {{x:number, z:number, w:number, d:number, color:string, label?:string, outline?:boolean}[]} shapes
  */
 export function planMap(shapes, { width = 640 } = {}) {
@@ -255,7 +255,7 @@ export function planMap(shapes, { width = 640 } = {}) {
   return `<svg viewBox="0 0 ${width} ${height.toFixed(0)}" role="img">${rects.join('')}</svg>`;
 }
 
-/** CSV (엑셀에서 한글이 깨지지 않도록 BOM 포함) */
+/** CSV (with a BOM so Korean text displays correctly in Excel) */
 export function toCsv(rows) {
   const cell = (v) => {
     const s = String(v ?? '');

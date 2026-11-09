@@ -1,8 +1,8 @@
 /**
- * [B · 시뮬레이션] 결과 계산
+ * [B · Simulation] Result calculation
  *
- * 무너진 비율, 처음 기능을 잃은 부재, 무너진 층 수
- * + (B-6) 붕괴 진행 시간, 층별 피해율, 원인별 피해
+ * Collapsed ratio, first failed part, floors lost
+ * + collapse time, per-floor damage, damage by cause
  */
 
 /**
@@ -18,7 +18,7 @@ export function computeResults(
   const counted = parts.filter((p) => p.kind !== 'fragment' && p.structural);
   const collapsed = counted.filter((p) => p.state !== 'intact' && p.state !== 'damaged');
 
-  // 층별로 바닥판이 모두 무너졌으면 그 층은 무너진 것으로 봄
+  // a floor counts as lost when all its slabs have collapsed
   const slabsByFloor = new Map();
   for (const p of counted) {
     if (p.kind !== 'slab' && p.kind !== 'roof') continue;
@@ -31,7 +31,7 @@ export function computeResults(
       floorsLost++;
   }
 
-  // 층별 피해율: 그 층 구조 부재의 평균 체력 손실 (떨어졌거나 기능을 잃은 부재는 1)
+  // per-floor damage: average hp loss of the floor's structural parts (fallen or failed parts count as 1)
   const perFloor = new Map();
   for (const p of counted) {
     const loss = p.state === 'intact' || p.state === 'damaged' ? 1 - p.hp : 1;
@@ -44,7 +44,7 @@ export function computeResults(
     .sort((a, b) => a[0] - b[0])
     .map(([floor, f]) => ({ floor, ratio: f.sum / f.count }));
 
-  // 원인별 피해: 깎인 체력 합의 비율 (합 1). 피해가 없으면 모두 0
+  // damage by cause: share of total hp lost (sums to 1; all 0 when nothing was damaged)
   const causes = damageByCause ?? { scenario: 0, collision: 0, debris: 0 };
   const total = causes.scenario + causes.collision + causes.debris;
   const share = (v) => (total > 0 ? v / total : 0);

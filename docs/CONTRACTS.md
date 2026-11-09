@@ -103,32 +103,32 @@
 
 B가 부재를 쪼개면 `kind: 'fragment'` 부재를 **같은 parts 배열에 추가**하고 `PART_ADDED` 이벤트를 보냅니다. 렌더러의 `syncParts()` 는 처음 보는 부재를 자동으로 그립니다.
 
-## 3. Scenario — 시나리오 실행 요청 (C → B)
+## 3. Scenario — scenario run request (C → B)
 
-시나리오마다 **실제 단위의 값**(`value`)을 보냅니다. 범위 · 기본값 · 설명 문구는 `sim/scenarioScale.js` 의 `SCALES` · `describeScenario` 를 쓰세요.
+Each scenario sends a **value in real-world units** (`value`). Use `SCALES` · `describeScenario` from `sim/scenarioScale.js` for ranges, defaults and the description text.
 
 ```js
-// 부재 하나를 대상으로 — 철거용 쇳덩이(2t)가 시속 30km로 충돌
+// one part as the target — a 2 t wrecking ball hits at 30 km/h
 { type: 'impact', value: 30, target: { kind: 'part', partId: 'col-1-0-0' } }
 
-// 위치 + 반경을 대상으로 — TNT 2kg (건물이 멀쩡해도 내부 빈 공간을 지정할 수 있음)
+// position + radius as the target — 2 kg TNT (works on empty interior space even when the building is intact)
 { type: 'explosion', value: 2, target: { kind: 'area', position: [x, y, z], radius: 3, floor: 2 } }
 
-// 지진은 대상 없이 — 규모 6.5, 진앙 거리 10km
+// earthquake without a target — magnitude 6.5, epicentral distance 10 km
 { type: 'earthquake', value: 6.5, distanceKm: 10, target: null }
 
-// 화재 — 표준화재 30분
+// fire — 30 minutes of standard fire
 { type: 'fire', value: 30, target: { kind: 'part', partId: 'slab-2-0-0-0' } }
 ```
 
-| type       | value (범위)                    | 부재 대상                                 | 위치 · 범위 대상                           |
-| ---------- | ------------------------------- | ----------------------------------------- | ------------------------------------------ |
-| impact     | 충돌 속도 km/h (5 ~ 60)         | 그 부재 가운데를 침                       | 범위 안 부재 각각을 침, 멀수록 에너지 감소 |
-| explosion  | TNT 환산량 kg (0.1 ~ 100)       | 그 부재 위치에서 폭발, 반경 = 7 · W^(1/3) | 그 위치에서 폭발, 반경 = 지정한 radius     |
-| fire       | 표준화재 지속 시간 분 (5 ~ 180) | 그 부재 위치에서 화재, 반경 3m            | 그 위치에서 화재, 반경 = 지정한 radius     |
-| earthquake | 규모 (1.0 ~ 9.0) + `distanceKm` | (대상 무시)                               | (대상 무시)                                |
+| type       | value (range)                      | Part target                                | Area target                                         |
+| ---------- | ---------------------------------- | ------------------------------------------ | --------------------------------------------------- |
+| impact     | impact speed km/h (5–60)           | hits the middle of the part                | hits every part in range, less energy farther out   |
+| explosion  | TNT equivalent kg (0.1–100)        | explodes at the part, radius = 7 · W^(1/3) | explodes at the position, radius = the given radius |
+| fire       | standard fire duration min (5–180) | fire at the part, radius 3 m               | fire at the position, radius = the given radius     |
+| earthquake | magnitude (1.0–9.0) + `distanceKm` | (target ignored)                           | (target ignored)                                    |
 
-`value` 가 없으면 이전 방식의 `intensity`(0 ~ 1)를 환산해서 씁니다 (선택한 층 붕괴 시연 · 스크립트 호환).
+Without `value`, the old `intensity` (0–1) is converted (keeps the floor collapse demo and scripts working).
 
 거리는 대상 중심에서 **부재 상자 표면까지**로 잽니다 (`sim/simulation.js` 의 `distanceToBox`).
 
@@ -143,16 +143,16 @@ B가 부재를 쪼개면 `kind: 'fragment'` 부재를 **같은 parts 배열에 �
   firstFailedPartId: 'col-1-0-0', // 처음 기능을 잃은 "구조" 부재
   floorsLost: 1,              // 바닥판이 모두 무너진 층 수
   finished: true,             // 모든 움직임이 멈췄는지
-  // ── B 단계 추가 ──
-  collapseTime: 4.3,          // 시나리오 시작 → 마지막 구조 부재가 무너질 때까지 (초), 없으면 null
-  floorDamage: [              // 층별 피해율 (구조 부재 평균 체력 손실, 무너진 부재는 1)
+  // ── added in stage B ──
+  collapseTime: 4.3,          // seconds from scenario start to the last structural collapse, null if none
+  floorDamage: [              // per-floor damage (average hp loss of structural parts, collapsed = 1)
     { floor: 1, ratio: 0.85 },
     { floor: 2, ratio: 0.4 },
   ],
-  damageByCause: {            // 원인별 피해 비율 (합 1)
-    scenario: 0.55,           //   시나리오 직접 피해 (충격 · 폭발 · 지진 · 화재)
-    collision: 0.3,           //   떨어진 부재가 부딪힌 피해
-    debris: 0.15,             //   쌓인 잔해 무게로 인한 피해
+  damageByCause: {            // share of damage by cause (sums to 1)
+    scenario: 0.55,           //   direct scenario damage (impact, explosion, earthquake, fire)
+    collision: 0.3,           //   falling parts hitting others
+    debris: 0.15,             //   piled debris weight
   },
 }
 ```
@@ -176,12 +176,12 @@ B가 부재를 쪼개면 `kind: 'fragment'` 부재를 **같은 parts 배열에 �
 |                 | `sim.runScenario(scenario)`                                             | 시나리오 실행                                                  |
 |                 | `sim.step(dt)`                                                          | 1/60초 진행                                                    |
 |                 | `sim.getResults() → SimResults`                                         | 결과                                                           |
-|                 | `sim.getHistory() → { events, samples }`                                | 이벤트 기록 (보고서용, B 단계 추가)                            |
-|                 | `sim.removeParts(ids)`                                                  | 부재를 없앤 것으로 처리 (핵심 부재 분석용)                     |
+|                 | `sim.getHistory() → { events, samples }`                                | event history (for reports, added in stage B)                  |
+|                 | `sim.removeParts(ids)`                                                  | treats parts as removed (key member analysis)                  |
 |                 | `sim.dispose()`                                                         | 정리                                                           |
-| sim/reports (B) | `REPORTS`, `buildReport(type, { spec, sim, parts, floor, onProgress })` | 보고서 3종 → `{ title, html, csv, baseName }` (서버 없음)      |
-|                 | `downloadText(name, text, mime)`, `openHtml(html)`                      | 내려받기 · 새 창                                               |
-| ui (C)          | `mountUI(root, { renderer, getParts, getSim }) → { update(dt) }`        | `getParts()` · `getSim()` 은 읽기 전용 (getSim: 보고서용)      |
+| sim/reports (B) | `REPORTS`, `buildReport(type, { spec, sim, parts, floor, onProgress })` | three reports → `{ title, html, csv, baseName }` (no server)   |
+|                 | `downloadText(name, text, mime)`, `openHtml(html)`                      | download · new window                                          |
+| ui (C)          | `mountUI(root, { renderer, getParts, getSim }) → { update(dt) }`        | `getParts()` · `getSim()` are read-only (getSim: for reports)  |
 
 ## 6. 상태 저장소 (store) — "지금의 값"
 
@@ -204,16 +204,16 @@ B가 부재를 쪼개면 `kind: 'fragment'` 부재를 **같은 parts 배열에 �
 
 `emit(EVENTS.X, payload)`, `on(EVENTS.X, fn)`
 
-| 이벤트        | 보내는 쪽 → 받는 쪽 | payload                                                                                                                                              |
-| ------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SCENARIO_RUN  | C → main → B        | Scenario                                                                                                                                             |
-| SIM_RESET     | C → main            | {} (선택 대상은 유지됨)                                                                                                                              |
-| PART_DAMAGED  | B → A, C            | { partId, hp }                                                                                                                                       |
-| PART_FAILED   | B → A, C            | { partId }                                                                                                                                           |
-| PART_DETACHED | B → A, C            | { partId }                                                                                                                                           |
-| PART_SETTLED  | B → A, C            | { partId }                                                                                                                                           |
-| PART_ADDED    | B → A               | { part }                                                                                                                                             |
-| IMPACT        | B → A (이펙트)      | { position, energy, kind: impact \| explosion \| collision \| fire \| glass, radius? } — glass: 유리가 깨지는 순간 (B 단계 추가, 모르면 먼지로 대체) |
-| SIM_FINISHED  | B → C               | SimResults                                                                                                                                           |
+| 이벤트        | 보내는 쪽 → 받는 쪽 | payload                                                                                                                                                                    |
+| ------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SCENARIO_RUN  | C → main → B        | Scenario                                                                                                                                                                   |
+| SIM_RESET     | C → main            | {} (선택 대상은 유지됨)                                                                                                                                                    |
+| PART_DAMAGED  | B → A, C            | { partId, hp }                                                                                                                                                             |
+| PART_FAILED   | B → A, C            | { partId }                                                                                                                                                                 |
+| PART_DETACHED | B → A, C            | { partId }                                                                                                                                                                 |
+| PART_SETTLED  | B → A, C            | { partId }                                                                                                                                                                 |
+| PART_ADDED    | B → A               | { part }                                                                                                                                                                   |
+| IMPACT        | B → A (이펙트)      | { position, energy, kind: impact \| explosion \| collision \| fire \| glass, radius? } — glass: the moment glass shatters (added in stage B; fall back to dust if unknown) |
+| SIM_FINISHED  | B → C               | SimResults                                                                                                                                                                 |
 
 새 이벤트가 필요하면 통합 담당에게 요청해 `core/events.js` 에 추가합니다.

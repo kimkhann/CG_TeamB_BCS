@@ -1,6 +1,6 @@
-// 무게에 따른 파괴 확인: 위층 기둥을 부숴 위층을 떨어뜨리고, 재료별로 아래층이 얼마나 부서지는지 비교
-// 사용법: node scripts/compare-crush.mjs [type] [floors] [failFloor]  (최대 30초 시뮬레이션)
-//   예)   node scripts/compare-crush.mjs piloti 5 4
+// Weight-driven damage check: destroy upper-floor columns so the upper floors fall, and compare lower-floor damage per material
+// Usage: node scripts/compare-crush.mjs [type] [floors] [failFloor]  (simulates up to 30 s)
+//   e.g.  node scripts/compare-crush.mjs piloti 5 4
 import { makeBuilding } from '../src/build/generator.js';
 import { createSimulation } from '../src/sim/simulation.js';
 
@@ -9,9 +9,9 @@ const floors = Number(process.argv[3] ?? 5);
 const failFloor = Number(process.argv[4] ?? floors - 1);
 
 const MATERIALS = [
-  { label: '철근콘크리트', materials: { frame: 'rc', slab: 'rc', wall: 'rc' } },
-  { label: '철골 + RC 바닥', materials: { frame: 'steel', slab: 'rc', wall: 'panel' } },
-  { label: '목조', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
+  { label: 'RC', materials: { frame: 'rc', slab: 'rc', wall: 'rc' } },
+  { label: 'steel + RC slab', materials: { frame: 'steel', slab: 'rc', wall: 'panel' } },
+  { label: 'timber', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
 ];
 
 for (const { label, materials } of MATERIALS) {
@@ -22,7 +22,7 @@ for (const { label, materials } of MATERIALS) {
       if (name === 'impact') impacts++;
     },
   });
-  // 고른 층의 기둥을 모두 부숨 → 그 층과 위층이 아래로 떨어짐
+  // destroy every column on the chosen floor → that floor and those above fall
   for (const col of parts.filter((p) => p.kind === 'column' && p.floor === failFloor)) {
     for (let n = 0; n < 3; n++) {
       sim.runScenario({ type: 'impact', intensity: 1, target: { kind: 'part', partId: col.id } });
@@ -39,9 +39,9 @@ for (const { label, materials } of MATERIALS) {
   const brokenBelow = below.filter((p) => p.state !== 'intact').length;
   const r = sim.getResults();
   console.log(
-    `${label.padEnd(10)} | 무너진 부재 ${String(r.collapsedParts).padStart(4)}/${r.totalParts} (${Math.round(r.collapsedRatio * 100)}%)` +
-      ` | 아래층 손상·붕괴 ${brokenBelow}/${below.length} | 무너진 층 ${r.floorsLost}` +
-      ` | ${(steps / 60).toFixed(1)}s, 평균 ${ms.toFixed(1)} ms/단계`,
+    `${label.padEnd(10)} | collapsed ${String(r.collapsedParts).padStart(4)}/${r.totalParts} (${Math.round(r.collapsedRatio * 100)}%)` +
+      ` | lower floors damaged/collapsed ${brokenBelow}/${below.length} | floors lost ${r.floorsLost}` +
+      ` | ${(steps / 60).toFixed(1)}s, avg ${ms.toFixed(1)} ms/step`,
   );
   sim.dispose();
 }

@@ -1,10 +1,10 @@
 /**
- * [B · 보고서] 공개 함수 — 화면(C)은 이 파일만 씁니다.
+ * [B · Report] Public API — the UI (C) uses only this file.
  *
- *   REPORTS                         보고서 종류 목록 (선택 상자용)
- *   buildReport(type, options)      보고서 만들기 → { title, html, csv, baseName }
- *   downloadText(name, text, mime)  파일 내려받기 (서버 없이 브라우저에서)
- *   openHtml(html)                  새 창에서 보고서 열기 (인쇄 → PDF 저장)
+ *   REPORTS                         report types (for the select box)
+ *   buildReport(type, options)      builds a report → { title, html, csv, baseName }
+ *   downloadText(name, text, mime)  downloads a file (in the browser, no server)
+ *   openHtml(html)                  opens the report in a new window (print → save as PDF)
  */
 
 import { analyzeLog, logCsv, renderLogReport } from './logAnalysis.js';
@@ -84,8 +84,8 @@ export async function buildReport(type, { spec, sim, parts, floor = 1, onProgres
 }
 
 /**
- * 파일 내려받기. claude.ai 아티팩트 안에서는 downloads 기능(보는 사람 확인 후 저장)을,
- * 그 밖(로컬 · 일반 웹)에서는 브라우저 다운로드를 씁니다.
+ * Downloads a file. Inside a claude.ai artifact it uses the downloads capability (saved after the viewer confirms);
+ * elsewhere (local, regular web) it uses a normal browser download.
  * @returns {Promise<string>} 'saved' | 'declined' | 'failed'
  */
 export async function downloadText(filename, text, mime) {
@@ -112,7 +112,7 @@ export async function downloadText(filename, text, mime) {
   return 'saved';
 }
 
-/** 새 창에서 보기는 일반 브라우저에서만 (아티팩트 안에서는 새 창이 막힘) */
+/** Opening a new window only works in a regular browser (blocked inside artifacts) */
 export const canOpenWindow = () => typeof window !== 'undefined' && !window.claude;
 
 export function openHtml(html) {

@@ -1,28 +1,28 @@
 /**
- * [B · 시뮬레이션] 지진 — 지면이 실제로 흔들리고, 층마다 지진력(층 질량 × 높이)으로 피해
+ * [B · Simulation] Earthquake — the ground really shakes, and each story takes seismic force (story mass × height)
  *
- * ── 1. 흔들림 (화면 · 물리) ─────────────────────────────────────
- *   지진이 이어지는 동안 서 있는 부재를 KINEMATIC 강체로 바꿔 지면과 함께 움직입니다.
- *   변위   u(h, t) = d_g(t) · (1 + AMP · h / H)     (1차 모드: 높이에 비례해 크게 흔들림)
- *   d_g(t) = 지면 변위 (두 주기의 사인파 합 × 포락선). 땅에 떨어진 잔해도 움직이는 지면 마찰로 흔들림.
- *   끝나면 서 있는 부재를 원래 위치 · 고정(STATIC) 강체로 되돌립니다.
+ * ── 1. Shaking (visual + physics) ──────────────────────────────────
+ *   While the quake lasts, standing parts become KINEMATIC bodies that move with the ground.
+ *   offset  u(h, t) = d_g(t) · (1 + AMP · h / H)     (first mode: sway grows with height)
+ *   d_g(t) = ground offset (two sine waves × envelope). Debris on the ground is shaken by friction with the moving ground.
+ *   Afterwards standing parts return to their original position as STATIC bodies.
  *
- * ── 2. 피해 (등가정적해석, KDS 41 17 00 의 방식을 단순화) ──────────
- *   지반 가속도     a_g(t) = PGA · 포락선 · 파형
- *                  PGA: 규모 · 진앙 거리로 감쇠식 계산 (Joyner & Boore 1981, sim/scenarioScale.js)
- *   건물 가속도     S_a(t) = 2.5 · a_g(t)          (설계응답스펙트럼 단주기 구간 증폭 2.5)
- *   밑면 전단력     V = M · S_a                     (M: 서 있는 부재 전체 질량)
- *   층 지진력       F_i = V · m_i·h_i / Σ m_j·h_j   (층 질량 × 높이에 비례, 단주기 건물 k = 1)
- *   층 전단력       V_i = Σ_{j ≥ i} F_j            (i층 기둥 · 벽이 함께 버팀)
- *   층 전단 내력    C_i = Σ τ · A · (부재 높이 / 층 높이) · √(2μ − 1) · hp
- *                  τ: 기둥은 휨 항복 기준 2·Mp/h ÷ 단면적 (shearColumn), 벽은 전단강도 (shearWall)
- *                  A: 수평 단면적
- *                  √(2μ − 1): 연성에 의한 지진력 감소 (Newmark–Hall, 단주기)
- *                  벽은 길이 방향으로만 버팀 (면외 방향 기여 0), hp 가 줄면 내력도 줄어듦
- *   체력 감소       Δhp/초 = SEISMIC_RATE · (V_i / C_i − 1)   (층 전단비가 1을 넘을 때)
- *   유리            층 전단비가 GLASS_RATIO 를 넘으면 층간 변형으로 그 층 유리가 깨지기 시작
+ * ── 2. Damage (equivalent static method, simplified from KDS 41 17 00) ──
+ *   ground acceleration  a_g(t) = PGA · envelope · waveform
+ *                  PGA: from magnitude and epicentral distance via attenuation (Joyner & Boore 1981, sim/scenarioScale.js)
+ *   building accel.  S_a(t) = 2.5 · a_g(t)          (short-period plateau of the design spectrum, 2.5)
+ *   base shear      V = M · S_a                     (M: total mass of standing parts)
+ *   story force     F_i = V · m_i·h_i / Σ m_j·h_j   (proportional to story mass × height, short period k = 1)
+ *   story shear     V_i = Σ_{j ≥ i} F_j            (resisted by story i's columns and walls)
+ *   story capacity  C_i = Σ τ · A · (member height / story height) · √(2μ − 1) · hp
+ *                  τ: columns use flexural yield 2·Mp/h ÷ area (shearColumn), walls use shear strength (shearWall)
+ *                  A: plan area
+ *                  √(2μ − 1): ductility-based force reduction (Newmark–Hall, short period)
+ *                  walls resist only along their length (no out-of-plane share); capacity drops as hp drops
+ *   hp loss         Δhp/s = SEISMIC_RATE · (V_i / C_i − 1)   (when the story shear ratio exceeds 1)
+ *   glass           above GLASS_RATIO, story drift starts breaking that story's glass
  *
- *   필로티 1층처럼 벽이 없는 층은 C_i 가 작아 먼저 무너집니다 (연약층).
+ *   A story without walls, like a piloti ground floor, has a small C_i and fails first (soft story).
  */
 
 import { EVENTS } from '../../core/events.js';
@@ -32,31 +32,31 @@ import { G } from '../impact.js';
 import { earthquakePga } from '../scenarioScale.js';
 
 export const DURATION = 8;
-/** 단주기 구간 스펙트럼 증폭 */
+/** Spectral amplification on the short-period plateau */
 export const SPECTRAL_AMP = 2.5;
-/** 층 전단비 초과분 1당 초당 체력 감소 */
+/** hp lost per second per unit of story shear ratio above 1 */
 export const SEISMIC_RATE = 1.5;
-/** 유리가 깨지기 시작하는 층 전단비 */
+/** Story shear ratio at which glass starts breaking */
 export const GLASS_RATIO = 0.5;
-/** PGA 0.5 g 일 때 지면 변위 (m) — 화면에서 보이도록 실제(수 cm)보다 키운 값 */
+/** Ground offset (m) at PGA 0.5 g — larger than reality (a few cm) so it is visible */
 const GROUND_DISPLACEMENT = 0.12;
-/** 지붕이 지면보다 더 흔들리는 비율 */
+/** How much more the roof sways than the ground */
 const AMP = 1.5;
-/** 지진 파형: 주기가 다른 두 사인파 (Hz) */
+/** Ground motion: two sine waves with different periods (Hz) */
 const WAVES = [
   { freq: 1.6, weight: 0.65 },
   { freq: 0.9, weight: 0.35 },
 ];
 const GROUP_REFRESH = 0.25;
 
-/** 0 → 1 (1초) → 1 (4초) → 0 (3초) */
+/** 0 → 1 (1 s) → 1 (4 s) → 0 (3 s) */
 export function envelope(t) {
   if (t < 1) return t;
   if (t < 5) return 1;
   return Math.max(0, (DURATION - t) / 3);
 }
 
-/** 부재 하나의 층 전단 내력 기여 (kN) — 방향 'x' | 'z' */
+/** One part's contribution to story shear capacity (kN) — direction 'x' | 'z' */
 export function shearCapacity(part, axis, storyHeight) {
   const phys = materialPhysics[part.material];
   const tau = (part.kind === 'column' ? phys?.shearColumn : phys?.shearWall) ?? 0;
@@ -77,7 +77,7 @@ const isVertical = (part) => part.kind === 'column' || part.kind === 'wall';
 export function runEarthquake(ctx, scenario) {
   const pgaG = earthquakePga(scenario);
   const pga = pgaG * G;
-  // 화면 흔들림: 0.5 g 에서 0.12 m, 너무 크면 0.3 m 로 제한
+  // visible sway: 0.12 m at 0.5 g, capped at 0.3 m
   const shake = Math.min(2.5, pgaG / 0.5);
   const amplitude = GROUND_DISPLACEMENT * shake;
   const energy = Math.min(1, shake);
@@ -85,7 +85,7 @@ export function runEarthquake(ctx, scenario) {
   const wave = (t, k) =>
     WAVES.reduce((s, w, i) => s + w.weight * Math.sin(2 * Math.PI * w.freq * t + phase[i][k]), 0);
 
-  // 층 정보: 높이(h_i)와 층 높이는 시작 시점 위치로 고정
+  // story data: heights (h_i) and story heights fixed from the starting positions
   const floors = new Map();
   for (const part of ctx.parts) {
     if (!ctx.isAlive(part) || part.kind === 'fragment') continue;
@@ -106,7 +106,7 @@ export function runEarthquake(ctx, scenario) {
   let dust = 0;
   ctx.emit(EVENTS.IMPACT, { position: [0, 0.2, 0], energy, kind: 'explosion' });
 
-  /** 층별 질량 · 부재 · 내력 다시 계산 (부재가 부서지면 질량과 내력이 바뀜) */
+  /** Recompute per-story mass, members and capacity (they change as parts break) */
   function regroup() {
     const byFloor = new Map();
     for (const part of ctx.parts) {
@@ -117,7 +117,7 @@ export function runEarthquake(ctx, scenario) {
       if (part.material === 'window' || part.material === 'curtain') g.glass.push(part);
       byFloor.set(part.floor, g);
     }
-    groups = [...byFloor.values()].sort((a, b) => b.floor - a.floor); // 위층부터
+    groups = [...byFloor.values()].sort((a, b) => b.floor - a.floor); // top story first
     for (const g of groups) {
       const info = floors.get(g.floor) ?? { top: height, storyHeight: 3 };
       g.h = info.top;
@@ -130,7 +130,7 @@ export function runEarthquake(ctx, scenario) {
     elapsed += dt;
     const env = envelope(elapsed);
 
-    // ① 흔들림: 지면 변위와 높이별 증폭
+    // ① shaking: ground offset amplified with height
     const dx = amplitude * env * wave(elapsed, 0);
     const dz = amplitude * env * 0.4 * wave(elapsed, 1);
     shaking.move(dt, (y) => {
@@ -138,7 +138,7 @@ export function runEarthquake(ctx, scenario) {
       return [dx * k, dz * k];
     });
 
-    // ② 등가정적 지진력으로 층별 피해
+    // ② per-story damage from equivalent static seismic forces
     refresh += dt;
     if (refresh >= GROUP_REFRESH) {
       refresh = 0;
@@ -152,7 +152,7 @@ export function runEarthquake(ctx, scenario) {
     let shearZ = 0;
     for (const g of groups) {
       const share = (g.mass * g.h) / sumMH;
-      shearX += totalMass * Math.abs(ax) * share; // 위층부터 누적 → 층 전단력
+      shearX += totalMass * Math.abs(ax) * share; // accumulated from the top → story shear
       shearZ += totalMass * Math.abs(az) * share;
       const rx = g.capX > 0 ? shearX / g.capX : shearX > 0 ? 10 : 0;
       const rz = g.capZ > 0 ? shearZ / g.capZ : shearZ > 0 ? 10 : 0;
@@ -170,7 +170,7 @@ export function runEarthquake(ctx, scenario) {
       }
     }
 
-    // 강하게 흔들리는 동안 바닥에서 먼지
+    // dust near the ground while shaking hard
     dust += dt;
     if (dust > 0.6 && env > 0.5) {
       dust = 0;

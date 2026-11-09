@@ -1,35 +1,35 @@
 /**
- * [B · 시뮬레이션] 시나리오의 크기를 실제 단위로 — 시나리오마다 다른 범위와 단위
+ * [B · Simulation] Scenario sizes in real-world units — each scenario has its own range and unit
  *
- *   충격   철거용 쇳덩이(2 t)의 충돌 속도        5 ~ 60 km/h
- *   폭발   TNT 환산량                           0.1 ~ 100 kg (로그 눈금)
- *   지진   규모 M                               1.0 ~ 9.0  + 진앙 거리 1 ~ 100 km
- *   화재   표준화재(ISO 834) 지속 시간            5 ~ 180 분
+ *   impact      2 t wrecking ball impact speed     5–60 km/h
+ *   explosion   TNT equivalent                    0.1–100 kg (log scale)
+ *   earthquake  magnitude M                       1.0–9.0  + epicentral distance 1–100 km
+ *   fire        standard fire (ISO 834) duration  5–180 min
  *
- * 화면(C)은 SCALES 로 막대를 만들고, SCENARIO_RUN 에 { value, distanceKm } 를 실어 보냅니다.
- * value 가 없으면(이전 방식) 0 ~ 1 의 intensity 를 fromIntensity 로 바꿔 씁니다.
+ * The UI (C) builds its slider from SCALES and sends { value, distanceKm } with SCENARIO_RUN.
+ * Without value (old format) the 0–1 intensity is converted with fromIntensity.
  *
- * ── 식과 근거 ──────────────────────────────────────────────
- *   충격   E = ½ m v²  (sim/impact.js 의 충돌 에너지 모델로 피해)
- *   폭발   피해 반경 R = 7 · W^(1/3) m — 환산거리 Z ≈ 7 m/kg^(1/3) 에서 폭풍압 약 20 kPa
- *          (Kingery–Bulmash 곡선, 벽 · 창이 크게 부서지는 수준)
- *   지진   최대 지반 가속도  log₁₀ PGA(g) = −1.02 + 0.249 M − log₁₀ r − 0.00255 r,  r = √(d² + 7.3²)
- *          (Joyner & Boore, 1981 — 감쇠식. 원 자료 범위는 M 5.0 ~ 7.7, 그 밖은 외삽)
- *          진도: PGA ↔ 수정 메르칼리 진도 (Wald et al., 1999)
- *   화재   피해 = 지속 시간 / 부재 내화 시간 (내화성 = 1 − 10분 / 내화 시간, data/materialPhysics.js)
- *          온도 T = 20 + 345 · log₁₀(8t + 1) ℃ (ISO 834), 화면에서는 8초로 압축
+ * ── Formulas and sources ──────────────────────────────────────
+ *   impact      E = ½ m v²  (damage from the impact energy model in sim/impact.js)
+ *   explosion   damage radius R = 7 · W^(1/3) m — scaled distance Z ≈ 7 m/kg^(1/3) gives ~20 kPa overpressure
+ *          (Kingery–Bulmash curves; heavy damage to walls and windows)
+ *   earthquake  peak ground acceleration  log₁₀ PGA(g) = −1.02 + 0.249 M − log₁₀ r − 0.00255 r,  r = √(d² + 7.3²)
+ *          (Joyner & Boore, 1981 attenuation; fitted on M 5.0–7.7, extrapolated outside)
+ *          intensity: PGA ↔ Modified Mercalli Intensity (Wald et al., 1999)
+ *   fire        damage = duration / part fire rating (fireResistance = 1 − 10 min / rating, data/materialPhysics.js)
+ *          temperature T = 20 + 345 · log₁₀(8t + 1) °C (ISO 834), played back in 8 s
  */
 
-/** 충격: 철거용 쇳덩이 질량 (t) */
+/** Impact: wrecking ball mass (t) */
 export const BALL_MASS = 2;
 const CAR_MASS = 1.5;
-/** 국내 설계지진 유효지반가속도 (g): 지진구역 Ⅰ 0.11 g × 2,400년 재현주기 계수 2.0 (KDS 41 17 00) */
+/** Korean design earthquake effective PGA (g): seismic zone I 0.11 g × 2,400-year return factor 2.0 (KDS 41 17 00) */
 export const DESIGN_PGA = 0.22;
-/** 화재가 화면에서 진행되는 시간 (초) */
+/** How long a fire plays on screen (s) */
 export const FIRE_PLAY_SECONDS = 8;
 
 /**
- * 시나리오별 막대 설정
+ * Slider settings per scenario
  * @type {Record<string, {label:string, unit:string, min:number, max:number, step?:number, log?:boolean,
  *   defaultValue:number, digits:number, fromIntensity:(i:number)=>number,
  *   distance?:{label:string, unit:string, min:number, max:number, step:number, defaultValue:number}}>}
@@ -63,7 +63,7 @@ export const SCALES = {
     step: 0.1,
     defaultValue: 6,
     digits: 1,
-    fromIntensity: (i) => i, // 이전 방식은 earthquakePga 에서 따로 처리
+    fromIntensity: (i) => i, // the old format is handled separately in earthquakePga
     distance: { label: '진앙 거리', unit: 'km', min: 1, max: 100, step: 1, defaultValue: 10 },
   },
   fire: {
@@ -78,7 +78,7 @@ export const SCALES = {
   },
 };
 
-/** 막대 위치(0 ~ 1000) ↔ 값. 로그 눈금이면 지수로 */
+/** Slider position (0–1000) ↔ value. Exponential on a log scale */
 export function valueFromSlider(scale, position) {
   const t = position / 1000;
   const v = scale.log
@@ -95,30 +95,30 @@ export function sliderFromValue(scale, value) {
   return Math.round(Math.min(1, Math.max(0, t)) * 1000);
 }
 
-/** 시나리오의 실제 값 (value 가 없으면 intensity 로 환산) */
+/** The scenario's real-world value (converted from intensity when value is missing) */
 export function scenarioValue(scenario) {
   if (typeof scenario.value === 'number') return scenario.value;
   return SCALES[scenario.type].fromIntensity(scenario.intensity ?? 0.6);
 }
 
-// ── 시나리오별 환산 ─────────────────────────────────────
+// ── Conversions per scenario ───────────────────────────────
 
 export const impactSpeed = (kmh) => kmh / 3.6;
 
-/** 폭발: TNT kg → 피해 반경 (m), 피해 배율 (TNT 1.5 kg 에서 1) */
+/** Explosion: TNT kg → damage radius (m) and damage factor (1 at 1.5 kg TNT) */
 export function blast(tntKg) {
   const radius = 7 * Math.cbrt(tntKg);
   return { radius, power: Math.min(3, Math.max(0.05, (radius - 2) / 6)) };
 }
 
-/** 지진: 규모 · 진앙 거리 → 최대 지반 가속도 (g) */
+/** Earthquake: magnitude and epicentral distance → peak ground acceleration (g) */
 export function pgaFromMagnitude(magnitude, distanceKm = 10) {
   const r = Math.sqrt(distanceKm * distanceKm + 7.3 * 7.3);
   const log = -1.02 + 0.249 * magnitude - Math.log10(r) - 0.00255 * r;
   return Math.min(2, 10 ** log);
 }
 
-/** 지진 시나리오의 PGA (g). 이전 방식(intensity만 있음)은 0.5 g × 세기 */
+/** PGA (g) of an earthquake scenario. Old format (intensity only) is 0.5 g × intensity */
 export function earthquakePga(scenario) {
   if (typeof scenario.value === 'number') {
     return pgaFromMagnitude(scenario.value, scenario.distanceKm ?? 10);
@@ -138,13 +138,13 @@ const MMI = [
   [Infinity, 'Ⅹ 이상', '대부분의 건물이 무너짐'],
 ];
 
-/** PGA(g) → 진도 등급 · 설명 */
+/** PGA (g) → intensity level and description */
 export function mmiFromPga(pga) {
   const row = MMI.find(([upper]) => pga < upper) ?? MMI[MMI.length - 1];
   return { level: row[1], text: row[2] };
 }
 
-/** 화면 이펙트 세기 (0 ~ 1) */
+/** Effect strength for the renderer (0–1) */
 export function effectEnergy(type, value, distanceKm) {
   if (type === 'impact') return Math.min(1, (0.5 * BALL_MASS * impactSpeed(value) ** 2) / 144);
   if (type === 'explosion') return Math.min(1, blast(value).power);
@@ -158,7 +158,7 @@ const round = (v, digits = 1) => {
   return Math.round(v * k) / k;
 };
 
-/** 값 표시 (막대 오른쪽) */
+/** Value label (right of the slider) */
 export function formatValue(type, value) {
   const s = SCALES[type];
   if (type === 'earthquake') return `M ${value.toFixed(1)}`;
@@ -167,7 +167,7 @@ export function formatValue(type, value) {
 }
 
 /**
- * 실제 크기 설명
+ * User-facing description of the real-world size (Korean, shown in the UI)
  * @returns {{ headline:string, detail:string }}
  */
 export function describeScenario(type, value, distanceKm = 10) {
