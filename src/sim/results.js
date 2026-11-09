@@ -1,16 +1,20 @@
 /**
  * [B · 시뮬레이션] 결과 계산
  *
- * 🔧 임시 버전(베이스): 무너진 비율, 처음 기능을 잃은 부재, 무너진 층 수.
- * TODO(B): 가장 위험했던 부재 순위, 붕괴까지 걸린 시간, 재료 비교용 지표
+ * 무너진 비율, 처음 기능을 잃은 부재, 무너진 층 수
+ * + (B-6) 붕괴 진행 시간, 층별 피해율, 원인별 피해
  */
 
 /**
  * @param {import('../core/types.js').Part[]} parts
- * @param {{ time:number, firstFailedPartId:string|null, finished:boolean }} info
+ * @param {{ time:number, firstFailedPartId:string|null, finished:boolean,
+ *           collapseTime?:number|null, damageByCause?:{scenario:number, collision:number, debris:number} }} info
  * @returns {import('../core/types.js').SimResults}
  */
-export function computeResults(parts, { time, firstFailedPartId, finished }) {
+export function computeResults(
+  parts,
+  { time, firstFailedPartId, finished, collapseTime = null, damageByCause },
+) {
   const counted = parts.filter((p) => p.kind !== 'fragment' && p.structural);
   const collapsed = counted.filter((p) => p.state !== 'intact' && p.state !== 'damaged');
 
@@ -27,6 +31,24 @@ export function computeResults(parts, { time, firstFailedPartId, finished }) {
       floorsLost++;
   }
 
+  // 층별 피해율: 그 층 구조 부재의 평균 체력 손실 (떨어졌거나 기능을 잃은 부재는 1)
+  const perFloor = new Map();
+  for (const p of counted) {
+    const loss = p.state === 'intact' || p.state === 'damaged' ? 1 - p.hp : 1;
+    const f = perFloor.get(p.floor) ?? { sum: 0, count: 0 };
+    f.sum += loss;
+    f.count++;
+    perFloor.set(p.floor, f);
+  }
+  const floorDamage = [...perFloor.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([floor, f]) => ({ floor, ratio: f.sum / f.count }));
+
+  // 원인별 피해: 깎인 체력 합의 비율 (합 1). 피해가 없으면 모두 0
+  const causes = damageByCause ?? { scenario: 0, collision: 0, debris: 0 };
+  const total = causes.scenario + causes.collision + causes.debris;
+  const share = (v) => (total > 0 ? v / total : 0);
+
   return {
     time,
     totalParts: counted.length,
@@ -35,5 +57,12 @@ export function computeResults(parts, { time, firstFailedPartId, finished }) {
     firstFailedPartId,
     floorsLost,
     finished,
+    collapseTime,
+    floorDamage,
+    damageByCause: {
+      scenario: share(causes.scenario),
+      collision: share(causes.collision),
+      debris: share(causes.debris),
+    },
   };
 }

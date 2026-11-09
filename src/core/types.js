@@ -65,6 +65,10 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  * @property {string|null} firstFailedPartId 가장 먼저 기능을 잃은 부재
  * @property {number} floorsLost         완전히 무너진 층 수
  * @property {boolean} finished          모든 움직임이 멈췄는지
+ * @property {number|null} collapseTime  시나리오 시작부터 마지막 구조 부재가 무너질 때까지 (초), 무너진 게 없으면 null
+ * @property {{floor:number, ratio:number}[]} floorDamage 층별 피해율 (0 ~ 1, 구조 부재의 평균 체력 손실 · 무너진 부재는 1)
+ * @property {{scenario:number, collision:number, debris:number}} damageByCause
+ *           원인별 피해 비율 (합 1, 피해 없으면 모두 0) — 시나리오 직접 피해 · 떨어진 부재 충돌 · 쌓인 잔해 무게
  */
 
 /**

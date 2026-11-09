@@ -38,6 +38,8 @@ import {
   MIN_IMPACT_SPEED,
   absorbedEnergy,
   impactDamage,
+  distanceToBox,
+  toWorld,
   isHorizontalMember,
   reserveCapacity,
   overloadDamage,
@@ -45,24 +47,16 @@ import {
 import { computeResults } from './results.js';
 import { SCENARIO_RUNNERS } from './scenarios/index.js';
 
-/**
- * 점에서 부재 상자 표면까지의 거리 (회전은 무시한 근사값). 큰 부재도 가장자리 기준으로 범위 판정.
- * @param {[number,number,number]} point
- */
-function distanceToBox(point, part) {
-  let sum = 0;
-  for (let a = 0; a < 3; a++) {
-    const d = Math.abs(point[a] - part.position[a]) - part.size[a] / 2;
-    if (d > 0) sum += d * d;
-  }
-  return Math.sqrt(sum);
-}
-
 /** 잔해 하중을 다시 계산하는 간격 (초) */
 const LOAD_CHECK_INTERVAL = 0.25;
 /** 먼지 이펙트: 이 에너지(kJ) 이상 충돌에서만, 초당 최대 개수 */
 const EFFECT_MIN_ENERGY = 5;
 const EFFECT_MAX_PER_SECOND = 8;
+/** 유리 깨짐 이펙트: 초당 최대 개수 (한꺼번에 수십 장이 깨질 때 파티클 과부하 방지) */
+const GLASS_EFFECT_MAX_PER_SECOND = 16;
+/** 깨지는 유리로 처리하는 재료 */
+const GLASS_MATERIALS = new Set(['window', 'curtain']);
+const isGlass = (part) => GLASS_MATERIALS.has(part.material);
 /** 이펙트 세기 1에 해당하는 충돌 에너지 (kJ) */
 const EFFECT_FULL_ENERGY = 40;
 
@@ -96,6 +90,12 @@ export function createSimulation(parts, { emit, seed }) {
 
   let time = 0;
   let firstFailedPartId = null;
+  /** B-6 결과용: 시나리오 시작 시각, 마지막으로 부재가 무너진 시각, 원인별 체력 감소 합 */
+  let scenarioStart = null;
+  let lastCollapseAt = null;
+  const damageByCause = { scenario: 0, collision: 0, debris: 0 };
+  /** 지진으로 흔들리는 중인지 (서 있는 부재가 KINEMATIC) */
+  let shakingActive = false;
   let scenarioActive = false;
   let finishedEmitted = false;
   /** 시간이 흐르며 계속 작용하는 효과 (예: 화재). (dt) => 끝났으면 true */
@@ -112,6 +112,7 @@ export function createSimulation(parts, { emit, seed }) {
   const impactQueue = [];
   let loadTimer = 0;
   let effectBudget = EFFECT_MAX_PER_SECOND;
+  let glassBudget = GLASS_EFFECT_MAX_PER_SECOND;
   let effectTimer = 0;
 
   /** 움직이는 강체의 첫 충돌을 기록합니다. (cannon-es 의 collide 는 처음 닿을 때만 발생) */
@@ -139,9 +140,13 @@ export function createSimulation(parts, { emit, seed }) {
     body.addEventListener('collide', onCollide);
   }
 
-  /** 체력을 직접 깎습니다 (재료 강도는 호출하는 쪽에서 이미 반영). */
-  function loseHp(part, amount) {
+  /**
+   * 체력을 직접 깎습니다 (재료 강도는 호출하는 쪽에서 이미 반영).
+   * @param {'scenario'|'collision'|'debris'} cause  원인별 피해 집계용
+   */
+  function loseHp(part, amount, cause = 'scenario') {
     if (!part || !isAlive(part) || amount <= 0) return;
+    damageByCause[cause] += Math.min(part.hp, amount);
     part.hp = Math.max(0, part.hp - amount);
     if (part.hp <= 0) fail(part);
     else part.state = 'damaged';
@@ -175,7 +180,7 @@ export function createSimulation(parts, { emit, seed }) {
         normal: hit.normal,
       });
       if (amount > 0) {
-        loseHp(target, amount);
+        loseHp(target, amount, 'collision');
         damaged = true;
       }
     }
@@ -245,7 +250,7 @@ export function createSimulation(parts, { emit, seed }) {
         interval,
       );
       if (amount > 0) {
-        loseHp(part, amount);
+        loseHp(part, amount, 'debris');
         damaged = true;
       }
     }
@@ -256,8 +261,17 @@ export function createSimulation(parts, { emit, seed }) {
 
   /** 지지를 잃은 부재를 떨어뜨립니다. */
   function detach(part) {
+    if (isGlass(part)) {
+      shatter(part, 0.4); // 유리는 통째로 떨어지지 않고 지지를 잃는 순간 깨짐
+      return;
+    }
     part.state = 'falling';
+    if (part.structural) lastCollapseAt = time; // 붕괴 진행 시간은 구조 부재 기준
     makeDynamic(part.sim.body, massOf(part));
+    if (shakingActive) {
+      part.sim.body.collisionFilterGroup = 1; // 흔들리는 부재(그룹 2)와 다시 충돌하도록
+      part.sim.body.collisionFilterMask = -1;
+    }
     watchImpacts(part.sim.body);
     const spin = 0.6;
     part.sim.body.angularVelocity.set(
@@ -268,10 +282,36 @@ export function createSimulation(parts, { emit, seed }) {
     emit(EVENTS.PART_DETACHED, { partId: part.id });
   }
 
+  /**
+   * 유리 깨짐: 강체를 만들지 않고 화면 효과로만 산산조각 냅니다.
+   * 실제 판유리는 충격이나 지지 상실 시 큰 판으로 떨어지기보다 작은 조각으로 깨지며,
+   * 유리 부재(창 · 커튼월 · 발코니 유리)는 건물의 15~20%를 차지해 강체 수를 크게 줄여 줍니다.
+   */
+  function shatter(part, energy) {
+    part.state = 'failed';
+    if (part.structural) lastCollapseAt = time; // 붕괴 진행 시간은 구조 부재 기준
+    part.hp = 0;
+    world.removeBody(part.sim.body);
+    emit(EVENTS.PART_FAILED, { partId: part.id });
+    if (glassBudget > 0) {
+      glassBudget--;
+      emit(EVENTS.IMPACT, {
+        position: [...part.position],
+        energy: Math.min(1, energy),
+        kind: 'glass',
+      });
+    }
+  }
+
   /** 체력이 0이 된 부재를 조각으로 나눕니다. */
   function fail(part) {
+    if (isGlass(part)) {
+      shatter(part, 0.7);
+      return;
+    }
     part.state = 'failed';
     part.hp = 0;
+    if (part.structural) lastCollapseAt = time; // 붕괴 진행 시간은 구조 부재 기준
     if (part.sim.body) world.removeBody(part.sim.body);
     if (!firstFailedPartId && part.structural) firstFailedPartId = part.id;
     emit(EVENTS.PART_FAILED, { partId: part.id });
@@ -281,8 +321,10 @@ export function createSimulation(parts, { emit, seed }) {
     for (let k = 0; k < count; k++) {
       const size = [...part.size];
       size[axis] = (part.size[axis] / count) * 0.96;
-      const local = [0, 0, 0];
-      local[axis] = -part.size[axis] / 2 + (part.size[axis] / count) * (k + 0.5);
+      const offset = [0, 0, 0];
+      offset[axis] = -part.size[axis] / 2 + (part.size[axis] / count) * (k + 0.5);
+      // 부재가 기울어져 있으면(박공지붕 등) 조각 위치도 같은 방향으로 회전
+      const local = toWorld(offset, part.quaternion);
       const fragment = createPart({
         id: `${part.id}-frag-${k}`,
         kind: 'fragment',
@@ -325,6 +367,79 @@ export function createSimulation(parts, { emit, seed }) {
       if (!part || !isAlive(part)) return;
       const strength = materialPhysics[part.material]?.strength ?? 1;
       loseHp(part, amount / strength);
+    },
+
+    /** 재료 강도로 나누지 않고 체력을 깎습니다 (지진처럼 모델 안에서 이미 재료 내력을 반영한 경우). */
+    damageRaw(part, amount) {
+      loseHp(part, amount, 'scenario');
+    },
+
+    /**
+     * 지면 흔들기 시작: 서 있는 부재를 KINEMATIC 강체로 바꿔 지면과 함께 움직이게 합니다.
+     * @returns {{ move:(dt:number, offsetAt:(y:number)=>[number,number])=>void, stop:()=>void }}
+     *   move: 높이 y 의 수평 변위 [dx, dz] 를 주는 함수로 이번 단계의 위치 · 속도를 정함
+     *   stop: 살아 있는 부재를 원래 위치 · 고정 강체로 되돌림
+     */
+    startShaking() {
+      const ground = world.ground;
+      const origins = new Map();
+      for (const part of parts) {
+        if (!isAlive(part) || !part.sim?.body) continue;
+        const body = part.sim.body;
+        origins.set(part, [...part.position]);
+        body.type = CANNON.Body.KINEMATIC;
+        body.allowSleep = false;
+        // 서로 맞닿은 KINEMATIC 부재끼리는 충돌 검사를 건너뜀 (그룹 2끼리 무시) — 떨어지는 잔해와는 충돌
+        body.collisionFilterGroup = 2;
+        body.collisionFilterMask = ~2;
+        body.updateMassProperties();
+      }
+      ground.type = CANNON.Body.KINEMATIC;
+      ground.collisionFilterGroup = 2;
+      ground.collisionFilterMask = ~2;
+      shakingActive = true;
+      let groundPrev = [0, 0];
+      return {
+        move(dt, offsetAt) {
+          for (const [part, origin] of origins) {
+            if (!isAlive(part)) {
+              origins.delete(part);
+              continue;
+            }
+            const [ox, oz] = offsetAt(origin[1]);
+            const body = part.sim.body;
+            const x = origin[0] + ox;
+            const z = origin[2] + oz;
+            body.velocity.set((x - body.position.x) / dt, 0, (z - body.position.z) / dt);
+            body.position.set(x, origin[1], z);
+            part.position[0] = x;
+            part.position[2] = z;
+          }
+          const g = offsetAt(0);
+          ground.velocity.set((g[0] - groundPrev[0]) / dt, 0, (g[1] - groundPrev[1]) / dt);
+          groundPrev = g;
+        },
+        stop() {
+          for (const [part, origin] of origins) {
+            if (!isAlive(part)) continue;
+            const body = part.sim.body;
+            part.position[0] = origin[0];
+            part.position[2] = origin[2];
+            body.position.set(...origin);
+            body.velocity.set(0, 0, 0);
+            body.type = CANNON.Body.STATIC;
+            body.allowSleep = true;
+            body.collisionFilterGroup = 1;
+            body.collisionFilterMask = -1;
+            body.updateMassProperties();
+          }
+          ground.type = CANNON.Body.STATIC;
+          ground.velocity.set(0, 0, 0);
+          ground.collisionFilterGroup = 1;
+          ground.collisionFilterMask = -1;
+          shakingActive = false;
+        },
+      };
     },
 
     /** 떨어지는 강체에 순간적인 힘을 줍니다. */
@@ -381,6 +496,7 @@ export function createSimulation(parts, { emit, seed }) {
       }
       scenarioActive = true;
       finishedEmitted = false;
+      if (scenarioStart === null) scenarioStart = time;
       run(ctx, scenario);
       ctx.updateSupports();
     },
@@ -388,13 +504,16 @@ export function createSimulation(parts, { emit, seed }) {
     step(dt) {
       time += dt;
 
+      // 시간에 따라 작용하는 효과(화재 · 지진). 이번 단계에 끝난 효과의 마지막 피해도 지지 판단에 반영
+      const hadOngoing = ongoing.length > 0;
       for (let i = ongoing.length - 1; i >= 0; i--) {
         if (ongoing[i](dt)) ongoing.splice(i, 1);
       }
-      if (ongoing.length) ctx.updateSupports();
+      if (hadOngoing) ctx.updateSupports();
 
       // 잠든 잔해와 고정 부재만 있으면 충돌 후보 탐색/해결 단계가 필요하지 않습니다.
       if (
+        shakingActive ||
         world.bodies.some(
           (body) => body.type === CANNON.Body.DYNAMIC && body.sleepState !== CANNON.Body.SLEEPING,
         )
@@ -409,6 +528,7 @@ export function createSimulation(parts, { emit, seed }) {
       if (effectTimer >= 1) {
         effectTimer = 0;
         effectBudget = EFFECT_MAX_PER_SECOND;
+        glassBudget = GLASS_EFFECT_MAX_PER_SECOND;
       }
 
       for (const part of parts) {
@@ -476,7 +596,14 @@ export function createSimulation(parts, { emit, seed }) {
     getResults() {
       const finished =
         scenarioActive && !ongoing.length && !parts.some((p) => p.state === 'falling');
-      return computeResults(parts, { time, firstFailedPartId, finished });
+      return computeResults(parts, {
+        time,
+        firstFailedPartId,
+        finished,
+        collapseTime:
+          lastCollapseAt !== null && scenarioStart !== null ? lastCollapseAt - scenarioStart : null,
+        damageByCause,
+      });
     },
 
     dispose() {

@@ -66,19 +66,26 @@ export function absorbedEnergy(mass, normalSpeed, targetPhys) {
   return 0.5 * mass * normalSpeed * normalSpeed * (1 - e * e) * SHARE;
 }
 
-/** 쿼터니언 q의 역회전을 벡터 v에 적용 (월드 → 부재 로컬) */
-function toLocal(v, q) {
-  const [x, y, z, w] = q;
-  // q⁻¹ · v · q  (단위 쿼터니언이므로 역 = 켤레)
-  const ix = w * v[0] - y * v[2] + z * v[1];
-  const iy = w * v[1] - z * v[0] + x * v[2];
-  const iz = w * v[2] - x * v[1] + y * v[0];
-  const iw = x * v[0] + y * v[1] + z * v[2];
+/** 단위 쿼터니언 (x, y, z, w)으로 벡터 v를 회전: v' = v + 2w(u×v) + 2u×(u×v), u = (x, y, z) */
+function rotate(v, x, y, z, w) {
+  const tx = 2 * (y * v[2] - z * v[1]);
+  const ty = 2 * (z * v[0] - x * v[2]);
+  const tz = 2 * (x * v[1] - y * v[0]);
   return [
-    ix * w + iw * x - iy * z + iz * y,
-    iy * w + iw * y - iz * x + ix * z,
-    iz * w + iw * z - ix * y + iy * x,
+    v[0] + w * tx + (y * tz - z * ty),
+    v[1] + w * ty + (z * tx - x * tz),
+    v[2] + w * tz + (x * ty - y * tx),
   ];
+}
+
+/** 쿼터니언 q의 회전을 벡터 v에 적용 (부재 로컬 → 월드) */
+export function toWorld(v, q) {
+  return rotate(v, q[0], q[1], q[2], q[3]);
+}
+
+/** 쿼터니언 q의 역회전을 벡터 v에 적용 (월드 → 부재 로컬) */
+export function toLocal(v, q) {
+  return rotate(v, -q[0], -q[1], -q[2], q[3]);
 }
 
 /**
@@ -117,6 +124,23 @@ export function impactDamage({ mass, normalSpeed, target, targetPhys, point, nor
   if (normalSpeed < MIN_IMPACT_SPEED) return 0;
   const energy = absorbedEnergy(mass, normalSpeed, targetPhys);
   return (energy * locationFactor(target, point, normal)) / energyCapacity(target, targetPhys);
+}
+
+/**
+ * 점에서 부재 상자 표면까지의 거리 (부재 회전 반영). 점이 상자 안이면 0.
+ * @param {[number,number,number]} point
+ */
+export function distanceToBox(point, part) {
+  const local = toLocal(
+    [point[0] - part.position[0], point[1] - part.position[1], point[2] - part.position[2]],
+    part.quaternion,
+  );
+  let sum = 0;
+  for (let a = 0; a < 3; a++) {
+    const d = Math.abs(local[a]) - part.size[a] / 2;
+    if (d > 0) sum += d * d;
+  }
+  return Math.sqrt(sum);
 }
 
 /** 수평 부재(바닥판 · 지붕판 · 보 · 수평 장식판)인지 — 잔해 하중 판정 대상 */

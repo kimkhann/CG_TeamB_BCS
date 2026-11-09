@@ -22,6 +22,7 @@ export function createWorld() {
   const ground = new CANNON.Body({ type: CANNON.Body.STATIC, shape: new CANNON.Plane() });
   ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
   world.addBody(ground);
+  world.ground = ground; // 지진 때 흔들기 위해 보관
 
   return world;
 }
@@ -59,6 +60,7 @@ export function massOf(part) {
 /** 고정 강체를 움직이는(DYNAMIC) 강체로 바꿉니다. */
 export function makeDynamic(body, mass) {
   body.type = CANNON.Body.DYNAMIC;
+  body.allowSleep = true; // 지진 중 KINEMATIC 이었다가 떨어지는 경우 되돌림
   body.mass = mass;
   body.updateMassProperties();
   body.wakeUp();
