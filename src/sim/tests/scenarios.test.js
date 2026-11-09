@@ -129,11 +129,19 @@ test('횡지지: 보 · 바닥판을 모두 잃은 위층 기둥은 쓰러지고
   assert.ok(isLaterallyStable(lower, byId, deps), '1층 기둥은 기초에 고정');
 });
 
-test('세기 설명: 시나리오별 실제 크기', async () => {
-  const { describeIntensity, mmiFromPga } = await import('../intensityScale.js');
-  assert.match(describeIntensity('impact', 1).headline, /시속 43km/);
-  assert.match(describeIntensity('explosion', 1).headline, /TNT 약 1.5 kg/);
-  assert.match(describeIntensity('earthquake', 1).headline, /진도 Ⅷ/);
-  assert.match(describeIntensity('fire', 1).headline, /20분/);
-  assert.equal(mmiFromPga(0.25).level, 'Ⅶ');
+test('시나리오 크기: 실제 단위 환산', async () => {
+  const m = await import('../scenarioScale.js');
+  assert.match(m.describeScenario('impact', 43).headline, /시속 43km/);
+  assert.ok(Math.abs(m.blast(1).radius - 7) < 1e-9, 'TNT 1kg → 반경 7m');
+  // 규모 6.0, 10km → 약 0.22 g (국내 설계지진 수준)
+  assert.ok(Math.abs(m.pgaFromMagnitude(6, 10) - 0.22) < 0.01);
+  assert.ok(m.pgaFromMagnitude(7, 10) > m.pgaFromMagnitude(7, 50), '멀수록 약함');
+  assert.match(m.describeScenario('earthquake', 6, 10).headline, /진도 Ⅶ/);
+  assert.match(m.describeScenario('fire', 30).headline, /30분/);
+  assert.equal(m.mmiFromPga(0.25).level, 'Ⅶ');
+  // 로그 눈금 막대 왕복
+  const s = m.SCALES.explosion;
+  assert.ok(Math.abs(m.valueFromSlider(s, m.sliderFromValue(s, 10)) - 10) < 0.5);
+  // 이전 방식(intensity) 호환
+  assert.equal(m.scenarioValue({ type: 'fire', intensity: 0.5 }), 10);
 });

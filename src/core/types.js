@@ -51,7 +51,9 @@ import { BUILDING_TYPES, MATERIAL_SLOTS } from '../data/ids.js';
  * 붕괴 시나리오 실행 요청 (C가 보내고 B가 실행)
  * @typedef {Object} Scenario
  * @property {'impact'|'explosion'|'earthquake'|'fire'} type
- * @property {number} intensity          세기 (0 ~ 1)
+ * @property {number} [value]            시나리오 크기 (실제 단위): 충격 km/h · 폭발 TNT kg · 지진 규모 · 화재 분
+ * @property {number} [distanceKm]       지진의 진앙 거리 (km)
+ * @property {number} [intensity]        (이전 방식) 세기 0 ~ 1 — value 가 없을 때만 사용
  * @property {ScenarioTarget|null} target 대상 (지진은 null 가능)
  */
 

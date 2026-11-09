@@ -105,23 +105,30 @@ B가 부재를 쪼개면 `kind: 'fragment'` 부재를 **같은 parts 배열에 �
 
 ## 3. Scenario — 시나리오 실행 요청 (C → B)
 
+시나리오마다 **실제 단위의 값**(`value`)을 보냅니다. 범위 · 기본값 · 설명 문구는 `sim/scenarioScale.js` 의 `SCALES` · `describeScenario` 를 쓰세요.
+
 ```js
-// 부재 하나를 대상으로
-{ type: 'impact', intensity: 0.6, target: { kind: 'part', partId: 'col-1-0-0' } }
+// 부재 하나를 대상으로 — 철거용 쇳덩이(2t)가 시속 30km로 충돌
+{ type: 'impact', value: 30, target: { kind: 'part', partId: 'col-1-0-0' } }
 
-// 위치 + 반경을 대상으로 (건물이 멀쩡해도 내부 빈 공간을 지정할 수 있음)
-{ type: 'explosion', intensity: 0.8, target: { kind: 'area', position: [x, y, z], radius: 3, floor: 2 } }
+// 위치 + 반경을 대상으로 — TNT 2kg (건물이 멀쩡해도 내부 빈 공간을 지정할 수 있음)
+{ type: 'explosion', value: 2, target: { kind: 'area', position: [x, y, z], radius: 3, floor: 2 } }
 
-// 지진은 대상 없이 가능
-{ type: 'earthquake', intensity: 0.7, target: null }
+// 지진은 대상 없이 — 규모 6.5, 진앙 거리 10km
+{ type: 'earthquake', value: 6.5, distanceKm: 10, target: null }
+
+// 화재 — 표준화재 30분
+{ type: 'fire', value: 30, target: { kind: 'part', partId: 'slab-2-0-0-0' } }
 ```
 
-| type       | 부재 대상                                  | 위치 · 범위 대상                              |
-| ---------- | ------------------------------------------ | --------------------------------------------- |
-| impact     | 그 부재에 피해                             | 범위 안 부재 모두에 거리에 따라 약해지는 피해 |
-| explosion  | 그 부재 위치에서 폭발, 반경 = 2 + 6 × 세기 | 그 위치에서 폭발, 반경 = 지정한 radius        |
-| fire       | 그 부재 위치에서 화재, 반경 3m             | 그 위치에서 화재, 반경 = 지정한 radius        |
-| earthquake | (대상 무시)                                | (대상 무시)                                   |
+| type       | value (범위)                    | 부재 대상                                 | 위치 · 범위 대상                           |
+| ---------- | ------------------------------- | ----------------------------------------- | ------------------------------------------ |
+| impact     | 충돌 속도 km/h (5 ~ 60)         | 그 부재 가운데를 침                       | 범위 안 부재 각각을 침, 멀수록 에너지 감소 |
+| explosion  | TNT 환산량 kg (0.1 ~ 100)       | 그 부재 위치에서 폭발, 반경 = 7 · W^(1/3) | 그 위치에서 폭발, 반경 = 지정한 radius     |
+| fire       | 표준화재 지속 시간 분 (5 ~ 180) | 그 부재 위치에서 화재, 반경 3m            | 그 위치에서 화재, 반경 = 지정한 radius     |
+| earthquake | 규모 (1.0 ~ 9.0) + `distanceKm` | (대상 무시)                               | (대상 무시)                                |
+
+`value` 가 없으면 이전 방식의 `intensity`(0 ~ 1)를 환산해서 씁니다 (선택한 층 붕괴 시연 · 스크립트 호환).
 
 거리는 대상 중심에서 **부재 상자 표면까지**로 잽니다 (`sim/simulation.js` 의 `distanceToBox`).
 

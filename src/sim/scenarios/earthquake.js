@@ -8,7 +8,8 @@
  *   끝나면 서 있는 부재를 원래 위치 · 고정(STATIC) 강체로 되돌립니다.
  *
  * ── 2. 피해 (등가정적해석, KDS 41 17 00 의 방식을 단순화) ──────────
- *   지반 가속도     a_g(t) = PGA · 포락선 · 파형,  PGA = 0.5 g × 세기
+ *   지반 가속도     a_g(t) = PGA · 포락선 · 파형
+ *                  PGA: 규모 · 진앙 거리로 감쇠식 계산 (Joyner & Boore 1981, sim/scenarioScale.js)
  *   건물 가속도     S_a(t) = 2.5 · a_g(t)          (설계응답스펙트럼 단주기 구간 증폭 2.5)
  *   밑면 전단력     V = M · S_a                     (M: 서 있는 부재 전체 질량)
  *   층 지진력       F_i = V · m_i·h_i / Σ m_j·h_j   (층 질량 × 높이에 비례, 단주기 건물 k = 1)
@@ -28,17 +29,16 @@ import { EVENTS } from '../../core/events.js';
 import { materialPhysics } from '../../data/materialPhysics.js';
 import { massOf } from '../physics.js';
 import { G } from '../impact.js';
+import { earthquakePga } from '../scenarioScale.js';
 
 export const DURATION = 8;
-/** 세기 1 일 때 최대 지반 가속도 (g) */
-export const PGA_PER_INTENSITY = 0.5;
 /** 단주기 구간 스펙트럼 증폭 */
 export const SPECTRAL_AMP = 2.5;
 /** 층 전단비 초과분 1당 초당 체력 감소 */
 export const SEISMIC_RATE = 1.5;
 /** 유리가 깨지기 시작하는 층 전단비 */
 export const GLASS_RATIO = 0.5;
-/** 세기 1 일 때 지면 변위 (m) — 화면에서 보이도록 실제(수 cm)보다 키운 값 */
+/** PGA 0.5 g 일 때 지면 변위 (m) — 화면에서 보이도록 실제(수 cm)보다 키운 값 */
 const GROUND_DISPLACEMENT = 0.12;
 /** 지붕이 지면보다 더 흔들리는 비율 */
 const AMP = 1.5;
@@ -74,9 +74,13 @@ export function shearCapacity(part, axis, storyHeight) {
 
 const isVertical = (part) => part.kind === 'column' || part.kind === 'wall';
 
-export function runEarthquake(ctx, { intensity }) {
-  const pga = PGA_PER_INTENSITY * G * intensity;
-  const amplitude = GROUND_DISPLACEMENT * intensity;
+export function runEarthquake(ctx, scenario) {
+  const pgaG = earthquakePga(scenario);
+  const pga = pgaG * G;
+  // 화면 흔들림: 0.5 g 에서 0.12 m, 너무 크면 0.3 m 로 제한
+  const shake = Math.min(2.5, pgaG / 0.5);
+  const amplitude = GROUND_DISPLACEMENT * shake;
+  const energy = Math.min(1, shake);
   const phase = WAVES.map(() => [ctx.random() * Math.PI * 2, ctx.random() * Math.PI * 2]);
   const wave = (t, k) =>
     WAVES.reduce((s, w, i) => s + w.weight * Math.sin(2 * Math.PI * w.freq * t + phase[i][k]), 0);
@@ -100,7 +104,7 @@ export function runEarthquake(ctx, { intensity }) {
   let refresh = GROUP_REFRESH;
   let groups = [];
   let dust = 0;
-  ctx.emit(EVENTS.IMPACT, { position: [0, 0.2, 0], energy: intensity, kind: 'explosion' });
+  ctx.emit(EVENTS.IMPACT, { position: [0, 0.2, 0], energy, kind: 'explosion' });
 
   /** 층별 질량 · 부재 · 내력 다시 계산 (부재가 부서지면 질량과 내력이 바뀜) */
   function regroup() {
@@ -172,7 +176,7 @@ export function runEarthquake(ctx, { intensity }) {
       dust = 0;
       ctx.emit(EVENTS.IMPACT, {
         position: [(ctx.random() - 0.5) * 8, 0.2, (ctx.random() - 0.5) * 8],
-        energy: 0.4 * intensity,
+        energy: 0.4 * energy,
         kind: 'collision',
       });
     }

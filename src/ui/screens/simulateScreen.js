@@ -17,7 +17,13 @@ import { SCENARIOS, BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
 import { STATE_COLORS } from '../../data/stateColors.js';
 import { h } from '../dom.js';
 import { columnsOf, floorCount } from '../floors.js';
-import { describeIntensity } from '../../sim/intensityScale.js';
+import {
+  SCALES,
+  describeScenario,
+  formatValue,
+  sliderFromValue,
+  valueFromSlider,
+} from '../../sim/scenarioScale.js';
 
 const STATE_LABELS = {
   intact: '정상',
@@ -35,17 +41,58 @@ export function renderSimulateScreen(root, ctx) {
   const { spec } = store.get();
   const floors = floorCount(ctx.getParts()) || spec.floors;
   let scenarioType = 'impact';
-  let intensity = 0.6;
+  // 시나리오마다 다른 단위 · 범위의 값 (충격 km/h, 폭발 TNT kg, 지진 규모, 화재 분)
+  const values = Object.fromEntries(Object.entries(SCALES).map(([k, s]) => [k, s.defaultValue]));
+  let distanceKm = SCALES.earthquake.distance.defaultValue;
   let partFloor = 1;
   const timers = [];
   const unsubscribers = [];
-  // 세기를 실제 크기로 보여 주는 문구 (계산은 B의 sim/intensityScale.js)
+  // 크기 막대와 실제 크기 설명 (범위 · 환산은 B의 sim/scenarioScale.js)
+  const scaleLabel = h('span', {});
   const scaleValue = h('span', { class: 'scale-value' });
+  const scaleSlider = h('input', {
+    type: 'range',
+    min: 0,
+    max: 1000,
+    step: 1,
+    oninput: (e) => {
+      values[scenarioType] = valueFromSlider(SCALES[scenarioType], Number(e.target.value));
+      updateScale();
+    },
+  });
+  const distanceValue = h('span', { class: 'scale-value' });
+  const distanceSlider = h('input', {
+    type: 'range',
+    min: SCALES.earthquake.distance.min,
+    max: SCALES.earthquake.distance.max,
+    step: SCALES.earthquake.distance.step,
+    value: distanceKm,
+    oninput: (e) => {
+      distanceKm = Number(e.target.value);
+      updateScale();
+    },
+  });
+  const distanceField = h(
+    'label',
+    { class: 'field' },
+    h('span', {}, SCALES.earthquake.distance.label, distanceValue),
+    distanceSlider,
+  );
   const scaleHeadline = h('strong', { class: 'scale-headline' });
   const scaleDetail = h('p', { class: 'hint scale-detail' });
+  let shownType = null;
   const updateScale = () => {
-    const { headline, detail } = describeIntensity(scenarioType, intensity);
-    scaleValue.textContent = intensity.toFixed(2);
+    const scale = SCALES[scenarioType];
+    const value = values[scenarioType];
+    if (shownType !== scenarioType) {
+      shownType = scenarioType;
+      scaleLabel.textContent = scale.label;
+      scaleSlider.value = String(sliderFromValue(scale, value));
+    }
+    scaleValue.textContent = formatValue(scenarioType, value);
+    distanceField.hidden = !scale.distance;
+    distanceValue.textContent = `${distanceKm} km`;
+    const { headline, detail } = describeScenario(scenarioType, value, distanceKm);
     scaleHeadline.textContent = headline;
     scaleDetail.textContent = detail;
   };
@@ -176,7 +223,12 @@ export function renderSimulateScreen(root, ctx) {
   }
 
   function run() {
-    emit(EVENTS.SCENARIO_RUN, { type: scenarioType, intensity, target: currentTarget() });
+    emit(EVENTS.SCENARIO_RUN, {
+      type: scenarioType,
+      value: values[scenarioType],
+      distanceKm: scenarioType === 'earthquake' ? distanceKm : undefined,
+      target: currentTarget(),
+    });
   }
 
   function runDemo() {
@@ -372,22 +424,8 @@ export function renderSimulateScreen(root, ctx) {
           Object.values(SCENARIOS).map((s) => h('option', { value: s.id }, s.label)),
         ),
       ),
-      h(
-        'label',
-        { class: 'field' },
-        h('span', {}, '세기 ', scaleValue),
-        h('input', {
-          type: 'range',
-          min: 0.1,
-          max: 1,
-          step: 0.05,
-          value: intensity,
-          oninput: (e) => {
-            intensity = Number(e.target.value);
-            updateScale();
-          },
-        }),
-      ),
+      h('label', { class: 'field' }, h('span', {}, scaleLabel, scaleValue), scaleSlider),
+      distanceField,
       h('div', { class: 'scale' }, scaleHeadline, scaleDetail),
       runButton,
       demoButton,

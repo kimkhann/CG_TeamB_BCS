@@ -1,7 +1,7 @@
 /**
  * [B · 시뮬레이션] 충격 — 철거용 쇳덩이(2 t)가 부딪히는 충격
  *
- *  속도 v = 2 + 10 × 세기 (m/s, 시속 7 ~ 43 km). 피해는 떨어진 부재의 충돌과 같은 에너지 모델(sim/impact.js):
+ *  속도: 시나리오 값(km/h, 5 ~ 60 — sim/scenarioScale.js). 피해는 떨어진 부재의 충돌과 같은 에너지 모델(sim/impact.js):
  *    Δhp = ½ m v² · (1 − e²) · 0.5 · f(위치, 방향) / U(재료 흡수 능력)
  *  - 부재 대상: 부재 가운데를 침. 기둥 · 벽 등 세운 부재는 옆에서, 바닥판 · 보 등 수평 부재는 위에서
  *  - 위치·범위 대상: 범위 안의 부재 각각을 침. 중심에서 멀수록 충돌 에너지가 (1 − 거리/반경) 배로 줄어듦
@@ -11,7 +11,7 @@
 import { EVENTS } from '../../core/events.js';
 import { materialPhysics } from '../../data/materialPhysics.js';
 import { impactDamage, isHorizontalMember } from '../impact.js';
-import { BALL_MASS, impactSpeed } from '../intensityScale.js';
+import { BALL_MASS, effectEnergy, impactSpeed, scenarioValue } from '../scenarioScale.js';
 
 /** 부재를 치는 방향: 수평 부재는 위에서, 세운 부재는 얇은 쪽 면에 수직으로 */
 function hitNormal(part) {
@@ -31,10 +31,12 @@ function hit(ctx, part, speed) {
   ctx.damageRaw(part, amount);
 }
 
-export function runImpact(ctx, { target, intensity }) {
+export function runImpact(ctx, scenario) {
+  const { target } = scenario;
+  const kmh = scenarioValue(scenario);
   const { center, radius, part } = ctx.resolveTarget(target);
   if (!center) return;
-  const speed = impactSpeed(intensity);
+  const speed = impactSpeed(kmh);
 
   if (part) {
     hit(ctx, part, speed);
@@ -43,5 +45,9 @@ export function runImpact(ctx, { target, intensity }) {
       hit(ctx, p, speed * Math.sqrt(1 - distance / radius)); // 에너지 ∝ v² 가 (1 − 거리/반경) 배
     }
   }
-  ctx.emit(EVENTS.IMPACT, { position: center, energy: intensity, kind: 'impact' });
+  ctx.emit(EVENTS.IMPACT, {
+    position: center,
+    energy: effectEnergy('impact', kmh),
+    kind: 'impact',
+  });
 }
