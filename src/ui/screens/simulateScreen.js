@@ -24,7 +24,13 @@ import {
   sliderFromValue,
   valueFromSlider,
 } from '../../sim/scenarioScale.js';
-import { REPORTS, buildReport, downloadText, openHtml } from '../../sim/reports/index.js';
+import {
+  REPORTS,
+  buildReport,
+  canOpenWindow,
+  downloadText,
+  openHtml,
+} from '../../sim/reports/index.js';
 
 const STATE_LABELS = {
   intact: '정상',
@@ -503,7 +509,7 @@ export function renderSimulateScreen(root, ctx) {
       'button',
       {
         class: 'btn',
-        onclick: () => downloadText(`${report.baseName}.html`, report.html, 'text/html'),
+        onclick: () => save(`${report.baseName}.html`, report.html, 'text/html'),
       },
       '보고서 (.html)',
     );
@@ -511,7 +517,7 @@ export function renderSimulateScreen(root, ctx) {
       'button',
       {
         class: 'btn',
-        onclick: () => downloadText(`${report.baseName}.csv`, report.csv, 'text/csv'),
+        onclick: () => save(`${report.baseName}.csv`, report.csv, 'text/csv'),
       },
       '원자료 (.csv)',
     );
@@ -528,12 +534,19 @@ export function renderSimulateScreen(root, ctx) {
       openButton,
     );
 
+    async function save(name, text, mime) {
+      const result = await downloadText(name, text, mime);
+      if (result === 'failed') status.textContent = '내려받기를 할 수 없는 환경입니다.';
+      else if (result === 'declined') status.textContent = '내려받기를 취소했습니다.';
+    }
+
     function update() {
       const info = REPORTS[reportType];
       description.textContent = info.description;
       floorField.hidden = !info.needsFloor;
       makeButton.disabled = busy;
       downloads.hidden = !report || busy;
+      openButton.hidden = !canOpenWindow();
     }
 
     async function make() {

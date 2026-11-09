@@ -83,7 +83,24 @@ export async function buildReport(type, { spec, sim, parts, floor = 1, onProgres
   throw new Error(`알 수 없는 보고서: ${type}`);
 }
 
-export function downloadText(filename, text, mime) {
+/**
+ * 파일 내려받기. claude.ai 아티팩트 안에서는 downloads 기능(보는 사람 확인 후 저장)을,
+ * 그 밖(로컬 · 일반 웹)에서는 브라우저 다운로드를 씁니다.
+ * @returns {Promise<string>} 'saved' | 'declined' | 'failed'
+ */
+export async function downloadText(filename, text, mime) {
+  const host = typeof window !== 'undefined' ? window.claude : null;
+  if (host?.use) {
+    const downloads = await host.use('downloads');
+    if (downloads) {
+      try {
+        await downloads.save({ filename, data: text });
+        return 'saved';
+      } catch (error) {
+        return error?.code === 'declined' ? 'declined' : 'failed';
+      }
+    }
+  }
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   const a = document.createElement('a');
   a.href = url;
@@ -92,7 +109,11 @@ export function downloadText(filename, text, mime) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return 'saved';
 }
+
+/** 새 창에서 보기는 일반 브라우저에서만 (아티팩트 안에서는 새 창이 막힘) */
+export const canOpenWindow = () => typeof window !== 'undefined' && !window.claude;
 
 export function openHtml(html) {
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
