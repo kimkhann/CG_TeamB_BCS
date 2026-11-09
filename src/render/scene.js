@@ -4,14 +4,16 @@
  * Three.js 장면, 카메라, 조명, 바닥을 만들고 부재를 화면에 그립니다.
  * 카메라 "조작"(OrbitControls)과 클릭 처리는 C의 ui/ 가 담당합니다.
  *
- * 🔧 임시 버전(베이스): 기본 조명 + 그림자 + 바닥 격자 + 대상 표시(반투명 구).
- * TODO(A): 하늘·환경광, 톤매핑 조정, 그림자 품질, 후처리 등
+ * 절차 표면, 환경 반사, 건물 크기에 맞춘 실시간 그림자, 대상 표시.
  */
 
 import * as THREE from 'three';
 import { on, EVENTS } from '../core/events.js';
 import { createPartMeshes } from './partMeshes.js';
 import { createEffects } from './effects.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { buildingBounds, fitSunToBounds } from './buildingBounds.js';
+import { createSite } from './site.js';
 
 /**
  * @typedef {import('../core/types.js').Part} Part
@@ -44,19 +46,29 @@ export function createRenderer(container) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#1c2533');
-  scene.fog = new THREE.Fog('#1c2533', 60, 160);
+  scene.background = new THREE.Color('#c6d2db');
+  scene.fog = new THREE.Fog('#c6d2db', 60, 175);
+  // 네트워크 HDR 대신 Three.js의 절차적 실내 환경을 미리 필터링해 반사에 사용합니다.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment();
+  const environment = pmrem.fromScene(room, 0.04);
+  scene.environment = environment.texture;
+  scene.environmentIntensity = 0.45;
+  room.dispose();
+  pmrem.dispose();
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
   camera.position.set(24, 18, 26);
   camera.lookAt(0, 6, 0);
 
   // 조명
-  scene.add(new THREE.HemisphereLight('#dfe9f5', '#3a3328', 1.2));
-  const sun = new THREE.DirectionalLight('#ffffff', 2.2);
+  scene.add(new THREE.HemisphereLight('#e4f0ff', '#8c8172', 1.35));
+  const sun = new THREE.DirectionalLight('#fff0d9', 3.1);
   sun.position.set(18, 30, 12);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -64,22 +76,31 @@ export function createRenderer(container) {
   Object.assign(sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 90 });
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun);
+  scene.add(sun.target);
+  const fill = new THREE.DirectionalLight('#b6d3f2', 0.8);
+  fill.position.set(-16, 10, -20);
+  scene.add(fill);
 
   // 바닥
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(400, 400),
-    new THREE.MeshStandardMaterial({ color: '#3b4553', roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: '#929e8d', roughness: 1 }),
   );
   ground.rotation.x = -Math.PI / 2;
+  // 도로는 연석보다 낮게 놓이므로 바탕 지면도 도로 아래로 내려 겹침을 피합니다.
+  ground.position.y = -0.06;
   ground.receiveShadow = true;
   scene.add(ground);
-  const grid = new THREE.GridHelper(120, 60, '#56657a', '#46536a');
-  grid.position.y = 0.01;
-  scene.add(grid);
-
-  const meshes = createPartMeshes(scene);
+  const site = createSite(scene);
+  const meshes = createPartMeshes(scene, {
+    anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()),
+  });
   const effects = createEffects(scene);
-  on(EVENTS.IMPACT, (event) => effects.play(event));
+  on(EVENTS.IMPACT, (event) => {
+    effects.play(event);
+    if (event.kind === 'fire') meshes.scorchAt(event);
+  });
+  on(EVENTS.SIM_RESET, () => effects.clear());
 
   // 위치·범위 대상 표시: 반투명 구 + 바닥 고리 + 중심점
   const marker = new THREE.Group();
@@ -124,6 +145,7 @@ export function createRenderer(container) {
   const raycaster = new THREE.Raycaster();
   /** @type {Part[]} */
   let currentParts = [];
+  let shadowTimer = 0;
 
   function castRay(ndc) {
     raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
@@ -141,6 +163,10 @@ export function createRenderer(container) {
     setParts(parts) {
       currentParts = parts;
       meshes.setParts(parts);
+      effects.clear();
+      const bounds = buildingBounds(parts);
+      fitSunToBounds(sun, bounds.clone().union(site.getShadowBounds()));
+      site.setBuilding(parts, bounds);
     },
     syncParts(parts) {
       currentParts = parts;
@@ -170,18 +196,26 @@ export function createRenderer(container) {
       markerWire.scale.setScalar(target.radius);
     },
     getBounds() {
-      const box = new THREE.Box3();
-      for (const p of currentParts) {
-        if (p.state !== 'intact' && p.state !== 'damaged') continue;
-        const half = new THREE.Vector3(p.size[0] / 2, p.size[1] / 2, p.size[2] / 2);
-        const center = new THREE.Vector3(...p.position);
-        box.expandByPoint(center.clone().sub(half));
-        box.expandByPoint(center.add(half));
-      }
-      return box;
+      return buildingBounds(currentParts);
     },
     update(dt) {
       effects.update(dt);
+      shadowTimer += dt;
+      if (shadowTimer >= 0.5) {
+        shadowTimer = 0;
+        if (currentParts.some((p) => p.state === 'falling')) {
+          fitSunToBounds(sun, buildingBounds(currentParts, false).union(site.getShadowBounds()));
+        }
+      }
+    },
+    getDiagnostics() {
+      return {
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        context: site.getDiagnostics(),
+      };
     },
     render() {
       renderer.render(scene, camera);

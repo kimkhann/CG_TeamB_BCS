@@ -228,11 +228,23 @@ export function createSimulation(parts, { emit, seed }) {
       }
       if (ongoing.length) ctx.updateSupports();
 
-      world.step(dt);
+      // 잠든 잔해와 고정 부재만 있으면 충돌 후보 탐색/해결 단계가 필요하지 않습니다.
+      if (
+        world.bodies.some(
+          (body) => body.type === CANNON.Body.DYNAMIC && body.sleepState !== CANNON.Body.SLEEPING,
+        )
+      ) {
+        world.step(dt);
+      }
 
       for (const part of parts) {
         if (part.state !== 'falling' && part.state !== 'settled') continue;
         const body = part.sim.body;
+        if (part.state === 'settled') {
+          if (body.sleepState === CANNON.Body.SLEEPING) continue;
+          part.state = 'falling';
+          part.sim.stillTime = 0;
+        }
         copyBodyToPart(body, part);
         if (part.state !== 'falling') continue;
 

@@ -1,15 +1,15 @@
 /**
  * [A · 건물 생성] 단독주택
  *
- * 🔧 임시 버전(베이스): 2×2칸 격자 골조 + 모든 층 바깥 벽. 지붕은 평평한 바닥판.
- * TODO(A): 박공지붕(경사 지붕 두 장), 벽식 구조 느낌(기둥 대신 두꺼운 벽), 출입문
+ * 2×2칸 골조, 현관, 세분화된 박공지붕. 구조 하중 경로는 기존 골조를 유지합니다.
  */
 
 import { buildGridFrame } from '../frame.js';
+import { addEntrance, addGableRoof, markBuilding } from '../details.js';
 
 /** @param {import('../../core/types.js').BuildingSpec} spec */
 export function buildHouse(spec) {
-  return buildGridFrame({
+  const parts = buildGridFrame({
     spec,
     cells: [
       [1, 1],
@@ -19,4 +19,7 @@ export function buildHouse(spec) {
     floorHeight: 3,
     hasWalls: () => true,
   });
+  addEntrance(parts);
+  addGableRoof(parts, spec, 8, 8, 3);
+  return markBuilding(parts, spec);
 }
