@@ -36,7 +36,7 @@ export const FIRE_PLAY_SECONDS = 8;
  */
 export const SCALES = {
   impact: {
-    label: '충돌 속도',
+    label: 'Impact speed',
     unit: 'km/h',
     min: 5,
     max: 60,
@@ -46,7 +46,7 @@ export const SCALES = {
     fromIntensity: (i) => (2 + 10 * i) * 3.6,
   },
   explosion: {
-    label: 'TNT 환산량',
+    label: 'TNT equivalent',
     unit: 'kg',
     min: 0.1,
     max: 100,
@@ -56,7 +56,7 @@ export const SCALES = {
     fromIntensity: (i) => ((2 + 6 * i) / 7) ** 3,
   },
   earthquake: {
-    label: '규모',
+    label: 'Magnitude',
     unit: '',
     min: 1,
     max: 9,
@@ -64,11 +64,18 @@ export const SCALES = {
     defaultValue: 6,
     digits: 1,
     fromIntensity: (i) => i, // the old format is handled separately in earthquakePga
-    distance: { label: '진앙 거리', unit: 'km', min: 1, max: 100, step: 1, defaultValue: 10 },
+    distance: {
+      label: 'Epicentral distance',
+      unit: 'km',
+      min: 1,
+      max: 100,
+      step: 1,
+      defaultValue: 10,
+    },
   },
   fire: {
-    label: '화재 지속 시간',
-    unit: '분',
+    label: 'Fire duration',
+    unit: 'min',
     min: 5,
     max: 180,
     step: 5,
@@ -127,15 +134,15 @@ export function earthquakePga(scenario) {
 }
 
 const MMI = [
-  [0.0017, 'Ⅰ', '사람이 느끼지 못함'],
-  [0.014, 'Ⅱ~Ⅲ', '실내 일부 사람만 느낌'],
-  [0.039, 'Ⅳ', '그릇 · 창문이 흔들림'],
-  [0.092, 'Ⅴ', '그릇이 깨지고 물건이 넘어짐'],
-  [0.18, 'Ⅵ', '무거운 가구가 움직이고 벽에 금이 감'],
-  [0.34, 'Ⅶ', '약한 건물은 크게 부서짐'],
-  [0.65, 'Ⅷ', '보통 건물도 일부 무너짐'],
-  [1.24, 'Ⅸ', '잘 지은 건물도 크게 부서짐'],
-  [Infinity, 'Ⅹ 이상', '대부분의 건물이 무너짐'],
+  [0.0017, 'Ⅰ', 'Not felt'],
+  [0.014, 'Ⅱ~Ⅲ', 'Felt by some people indoors'],
+  [0.039, 'Ⅳ', 'Dishes and windows shake'],
+  [0.092, 'Ⅴ', 'Dishes break; objects overturn'],
+  [0.18, 'Ⅵ', 'Heavy furniture moves; walls crack'],
+  [0.34, 'Ⅶ', 'Weak buildings suffer heavy damage'],
+  [0.65, 'Ⅷ', 'Ordinary buildings may partially collapse'],
+  [1.24, 'Ⅸ', 'Well-built structures suffer heavy damage'],
+  [Infinity, 'Ⅹ or higher', 'Most buildings collapse'],
 ];
 
 /** PGA (g) → intensity level and description */
@@ -167,7 +174,7 @@ export function formatValue(type, value) {
 }
 
 /**
- * User-facing description of the real-world size (Korean, shown in the UI)
+ * User-facing description of the real-world size (English, shown in the UI)
  * @returns {{ headline:string, detail:string }}
  */
 export function describeScenario(type, value, distanceKm = 10) {
@@ -176,32 +183,32 @@ export function describeScenario(type, value, distanceKm = 10) {
     const energy = 0.5 * BALL_MASS * v * v;
     const car = Math.sqrt((2 * energy) / CAR_MASS) * 3.6;
     return {
-      headline: `철거용 쇳덩이 ${BALL_MASS}t이 시속 ${Math.round(value)}km로 충돌`,
-      detail: `충돌 에너지 ${Math.round(energy)} kJ — 승용차(1.5t)가 시속 ${Math.round(car)}km로 들이받는 것과 같은 에너지`,
+      headline: `${BALL_MASS} t wrecking ball at ${Math.round(value)} km/h`,
+      detail: `Impact energy ${Math.round(energy)} kJ — equivalent to a 1.5 t car at ${Math.round(car)} km/h`,
     };
   }
   if (type === 'explosion') {
     const { radius } = blast(value);
     return {
-      headline: `TNT ${value < 1 ? round(value, 2) : round(value, 1)} kg · 피해 반경 ${round(radius)} m`,
-      detail: `반경 안은 벽 · 창이 크게 부서지는 폭풍압(약 20 kPa 이상). 위치 · 범위 대상은 지정한 반경 안에만 피해`,
+      headline: `TNT ${value < 1 ? round(value, 2) : round(value, 1)} kg · damage radius ${round(radius)} m`,
+      detail: `Blast pressure can heavily damage walls and glazing (about 20 kPa or more). Area targets use the selected radius.`,
     };
   }
   if (type === 'earthquake') {
     const pga = pgaFromMagnitude(value, distanceKm);
     const { level, text } = mmiFromPga(pga);
     return {
-      headline: `진앙 ${Math.round(distanceKm)}km → 진도 ${level} · 최대 지반 가속도 ${round(pga, 2)} g`,
+      headline: `${Math.round(distanceKm)} km from epicenter · MMI ${level} · peak ground acceleration ${round(pga, 2)} g`,
       detail:
-        `${text}. 국내 내진설계 기준 지진(0.22 g)의 ${round(pga / DESIGN_PGA)}배` +
-        (value < 5 || value > 7.7 ? ' (감쇠식 자료 범위 M 5.0~7.7 밖 — 외삽값)' : ''),
+        `${text}. ${round(pga / DESIGN_PGA)}× the Korean design reference (0.22 g)` +
+        (value < 5 || value > 7.7 ? ' (extrapolated beyond the M 5.0–7.7 data range)' : ''),
     };
   }
   if (type === 'fire') {
     const temp = 20 + 345 * Math.log10(8 * value + 1);
     return {
-      headline: `표준 화재 ${Math.round(value)}분 · 약 ${Math.round(temp / 10) * 10}℃`,
-      detail: `내화 시간이 ${Math.round(value)}분보다 짧은 부재는 무너짐 (철골 무피복 약 20분, 경골 목조 약 30분, 조적벽 약 2시간, RC 3시간). 화면에서는 ${FIRE_PLAY_SECONDS}초로 압축`,
+      headline: `Standard fire · ${Math.round(value)} min · approx. ${Math.round(temp / 10) * 10} °C`,
+      detail: `Members rated below ${Math.round(value)} min fail: bare steel ≈20 min, timber ≈30 min, masonry ≈2 h, RC ≈3 h. Playback compresses this to ${FIRE_PLAY_SECONDS} s`,
     };
   }
   return { headline: '', detail: '' };

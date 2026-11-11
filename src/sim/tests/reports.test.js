@@ -19,20 +19,20 @@ test('report ①: log analysis — history, causes, cascade, CSV', async () => {
   assert.ok(history.samples.length > 0);
   const report = await buildReport('log', { spec, sim, parts });
   assert.match(report.html, /^<!doctype html>/);
-  assert.match(report.html, /연쇄를 일으킨 부재/);
-  assert.ok(report.csv.startsWith('﻿시각(초)'));
+  assert.match(report.html, /Cascade triggers/);
+  assert.ok(report.csv.startsWith('﻿Time (s)'));
   sim.dispose();
 });
 
 test('report ②: design alternatives — current + other materials, ground-floor walls for a piloti', () => {
   const piloti = designVariants({ type: 'piloti', floors: 4 });
-  assert.equal(piloti[0].name, '현재 설계');
-  assert.ok(piloti.some((v) => v.name.includes('1층 벽')));
-  const walls = piloti.find((v) => v.name.includes('1층 벽')).build(piloti[0].spec);
+  assert.equal(piloti[0].name, 'Current design');
+  assert.ok(piloti.some((v) => v.name.includes('ground-floor walls')));
+  const walls = piloti.find((v) => v.name.includes('ground-floor walls')).build(piloti[0].spec);
   assert.ok(walls.some((p) => p.kind === 'wall' && p.floor === 1 && p.structural));
   const apartment = designVariants({ type: 'apartment', floors: 3 });
   assert.ok(
-    !apartment.some((v) => v.name === 'RC 골조'),
+    !apartment.some((v) => v.name === 'RC frame'),
     'skip the material set identical to the current one',
   );
 });
@@ -47,6 +47,6 @@ test('report ③: key member grading', async () => {
     spec: normalizeSpec({ type: 'house', floors: 1 }),
     floor: 1,
   });
-  assert.match(report.html, /핵심 부재 지도/);
+  assert.match(report.html, /Key member map/);
   assert.match(report.html, /<svg/);
 });

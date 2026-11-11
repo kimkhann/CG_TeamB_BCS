@@ -20,7 +20,7 @@
  * Final grade = the worse of the two
  */
 
-import { BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
+import { BUILDING_TYPES, MATERIALS } from '../../ui/english.js';
 import { normalizeSpec } from '../../core/types.js';
 import { shearCapacity } from '../scenarios/earthquake.js';
 import { freshSimulation, runUntil } from './headless.js';
@@ -47,10 +47,10 @@ const alive = (p) => p.state === 'intact' || p.state === 'damaged';
 const isVertical = (p) => p.kind === 'column' || p.kind === 'wall';
 
 export const GRADES = {
-  critical: { label: '핵심 — 없애면 안 됨', short: '핵심', color: COLORS.red },
-  caution: { label: '주의', short: '주의', color: COLORS.orange },
-  local: { label: '국부', short: '국부', color: COLORS.yellow },
-  safe: { label: '여유', short: '여유', color: COLORS.green },
+  critical: { label: 'Critical — retain', short: 'Critical', color: COLORS.red },
+  caution: { label: 'Caution', short: 'Caution', color: COLORS.orange },
+  local: { label: 'Local', short: 'Local', color: COLORS.yellow },
+  safe: { label: 'Low impact', short: 'Low impact', color: COLORS.green },
 };
 
 export function gravityGrade({ spreadLoss, slabLoss, collapsedOthers }) {
@@ -144,7 +144,7 @@ export async function runKeyMembers(rawSpec, floor, onProgress = () => {}) {
   const results = [];
   for (let i = 0; i < members.length; i++) {
     const m = members[i];
-    onProgress(i, members.length, `${short.get(m.id)} 없애 보는 중`);
+    onProgress(i, members.length, `${short.get(m.id)} removal test`);
     const { parts, sim } = freshSimulation(spec);
     const slabs = parts.filter((p) => isSlab(p) && p.floor >= floor);
     const near = (s) =>
@@ -174,7 +174,7 @@ export async function runKeyMembers(rawSpec, floor, onProgress = () => {}) {
     results.push({
       id: m.ids.join(' '),
       short: short.get(m.id),
-      label: m.kind === 'wall' ? `${floor}층 벽 ${short.get(m.id)}` : m.label,
+      label: m.kind === 'wall' ? `L${floor} wall ${short.get(m.id)}` : m.label,
       kind: m.kind,
       material: m.material,
       position: [...m.position],
@@ -192,7 +192,7 @@ export async function runKeyMembers(rawSpec, floor, onProgress = () => {}) {
     });
     sim.dispose();
   }
-  onProgress(members.length, members.length, '완료');
+  onProgress(members.length, members.length, 'Complete');
   const outline = base.filter((p) => p.floor === floor && isSlab(p)); // map background
   return { spec, floor, results, outline };
 }
@@ -206,42 +206,42 @@ function keyFindings({ floor, results }) {
 
   if (cols.length && count('gravity', 'critical') === cols.length) {
     out.push(
-      `${floor}층 기둥은 <b>어느 하나만 잃어도</b> 떨어지는 바닥이 주변을 부수며 피해가 건물 전체로 번집니다 — 연쇄 붕괴에 취약한 구조입니다. 기둥 보강 또는 하중을 나눠 받는 구조(벽 · 보 연속성)가 필요합니다.`,
+      `Removing <b>any column on level ${floor}</b> triggers falling slabs that spread damage across the building. This structure is vulnerable to progressive collapse; column reinforcement or alternate load paths should be considered.`,
     );
   } else if (count('gravity', 'critical')) {
     out.push(
-      `기둥 · 벽 <b>${count('gravity', 'critical')}개</b>는 하나만 없어도 직접 받치던 칸 밖으로 바닥 붕괴가 번집니다 (위층 바닥의 ${pct(GSA_LIMIT)} 이상): ${results
+      `Removing any of <b>${count('gravity', 'critical')} columns or walls</b> spreads slab collapse beyond its supported bay (at least ${pct(GSA_LIMIT)} of upper-floor slabs): ${results
         .filter((r) => r.gravity === 'critical')
         .slice(0, 8)
         .map((r) => esc(r.short))
         .join(', ')}.`,
     );
   } else {
-    out.push(`${floor}층에는 하나만 없앴을 때 피해가 주변으로 크게 번지는 부재가 없습니다.`);
+    out.push(`No single member removal on level ${floor} causes widespread secondary damage.`);
   }
   const worst = [...cols].sort((a, b) => b.immediateLoss - a.immediateLoss)[0];
   const least = [...cols].sort((a, b) => a.immediateLoss - b.immediateLoss)[0];
   if (worst && worst !== least) {
     out.push(
-      `직접 받치는 범위가 가장 큰 기둥은 <b>${esc(worst.short)}</b> (없애는 즉시 위층 바닥 ${pct(worst.immediateLoss)} 붕괴), 가장 작은 기둥은 ${esc(least.short)} (${pct(least.immediateLoss)}) — 모서리보다 가운데 기둥이 더 넓은 바닥을 받칩니다.`,
+      `<b>${esc(worst.short)}</b> supports the largest slab area (${pct(worst.immediateLoss)} immediate loss); ${esc(least.short)} supports the smallest (${pct(least.immediateLoss)}). Interior columns generally support more floor area than corner columns.`,
     );
   }
   const topShare = [...results].sort((a, b) => b.share - a.share)[0];
   if (topShare && topShare.share > 0) {
     out.push(
-      `지진 때 ${floor}층을 옆으로 가장 많이 버티는 부재는 <b>${esc(topShare.label)}</b> (층 전단 내력의 ${pct(topShare.share, 1)})입니다.`,
+      `<b>${esc(topShare.label)}</b> provides the largest lateral resistance on level ${floor}: ${pct(topShare.share, 1)} of story shear capacity.`,
     );
   }
   if (walls.length) {
     const seismicWalls = walls.filter((w) => w.seismic !== 'safe').length;
     out.push(
-      `벽 ${walls.length}개는 이 모델에서 바닥의 수직 하중을 받지 않습니다. 대신 지진 저항 기여율로 평가했고 ${seismicWalls}개가 2% 이상입니다 — 벽을 철거하면 지진에 약해집니다.`,
+      `The ${walls.length} walls carry no vertical slab load in this model. They are rated by seismic contribution; ${seismicWalls} contribute at least 2%. Wall removal reduces lateral resistance.`,
     );
   }
   out.push(
     crit.length
-      ? `종합: <b>없애면 안 되는 부재 ${crit.length}개</b>, 변경 검토 후보(여유) ${count('grade', 'safe')}개. 실제 철거 · 변경은 구조기술사 검토가 필요합니다.`
-      : `종합: 핵심 부재 없음, 변경 검토 후보(여유) ${count('grade', 'safe')}개. 실제 철거 · 변경은 구조기술사 검토가 필요합니다.`,
+      ? `Overall: <b>${crit.length} critical members</b>; ${count('grade', 'safe')} low-impact candidates for review. Real alterations require a structural engineer.`
+      : `Overall: no critical members; ${count('grade', 'safe')} low-impact candidates for review. Real alterations require a structural engineer.`,
   );
   return out;
 }
@@ -272,7 +272,7 @@ export function renderKeyMembersReport(data) {
       d: Math.max(r.size[2], 0.35),
       color: GRADES[r.grade].color,
       label: r.short,
-      title: `${r.label}: ${GRADES[r.grade].short} (연쇄 ${GRADES[r.gravity].short} · 지진 ${GRADES[r.seismic].short})`,
+      title: `${r.label}: ${GRADES[r.grade].short} (cascade ${GRADES[r.gravity].short} · Earthquake ${GRADES[r.seismic].short})`,
     })),
   ];
 
@@ -281,62 +281,62 @@ export function renderKeyMembersReport(data) {
     esc(r.label),
     MATERIALS[r.material]?.label ?? r.material,
     tag(GRADES[r.grade].short, GRADES[r.grade].color),
-    `${tag(GRADES[r.gravity].short, GRADES[r.gravity].color)} 즉시 ${pct(r.immediateLoss)} → 확산 ${pct(r.spreadLoss)}`,
+    `${tag(GRADES[r.gravity].short, GRADES[r.gravity].color)} immediate ${pct(r.immediateLoss)} → spread ${pct(r.spreadLoss)}`,
     `${tag(GRADES[r.seismic].short, GRADES[r.seismic].color)} ${pct(r.share, 1)}`,
     r.collapsedOthers,
   ]);
 
   const body = [
     section(
-      '결과 한눈에',
+      'Results at a glance',
       kpis([
-        [`${results.length}개`, `분석한 ${floor}층 기둥 · 벽`],
-        [`${count('critical')}개`, '핵심 (없애면 안 됨)'],
-        [`${count('caution') + count('local')}개`, '주의 · 국부'],
-        [`${count('safe')}개`, '여유 (변경 검토 후보)'],
+        [`${results.length}`, `Analyzed L${floor} columns & walls`],
+        [`${count('critical')}`, 'Critical / retain'],
+        [`${count('caution') + count('local')}`, 'Caution / local'],
+        [`${count('safe')}`, 'Low impact / review candidate'],
       ]),
     ),
     section(
-      `${floor}층 평면 — 부재를 하나씩 없앴을 때`,
+      `L${floor} plan / individual member removal tests`,
       planMap(shapes) +
         legend(ORDER.map((g) => [GRADES[g].label, GRADES[g].color])) +
-        '<p class="note">위에서 내려다본 평면입니다. 회색 칸은 그 층 바닥판, 글자는 표의 부재 번호, 색은 두 평가 중 나쁜 쪽입니다.</p>',
+        '<p class="note">Top-down plan. Gray areas are floor slabs; labels match the member table. Colors show the more severe of the two ratings.</p>',
     ),
     section(
-      '부재별 결과',
+      'Member results',
       table(
         [
-          '번호',
-          '부재',
-          '재료',
-          '종합',
-          '수직 하중 (위층 바닥 붕괴)',
-          '지진 저항 기여율',
-          '함께 무너진 구조 부재',
+          'No.',
+          'Member',
+          'Materials',
+          'Overall',
+          'Gravity / upper slab loss',
+          'Seismic resistance share',
+          'Other collapsed members',
         ],
         rows,
         [6],
       ) +
-        '<p class="note">즉시 = 없애는 순간 지지를 잃고 무너진 위층 바닥 비율 · 확산 = 8초 안에 직접 받치던 칸 밖으로 번져 무너진 비율 · 지진 저항 기여율 = 그 층 층 전단 내력 중 이 부재의 몫</p>',
+        '<p class="note">Immediate = upper slabs losing support upon removal. Spread = collapse beyond the supported bay within 8 s. Seismic share = this member’s fraction of story shear capacity.</p>',
     ),
     section(
-      '분석 방법과 한계',
+      'Method & limitations',
       `<ul class="note">
-<li>${floor}층의 구조 기둥과 벽을 하나씩 없앤 건물을 각각 시뮬레이션했습니다 (없애는 순간 지지를 다시 판단하고, 떨어지는 부재의 충돌 · 잔해 무게까지 최대 8초 계산).</li>
-<li>수직 하중 등급: 직접 받치던 칸(기둥 간격 한 칸) 밖에서 위층 바닥이 ${pct(GSA_LIMIT)} 이상 무너지면 핵심 — GSA 대체경로법의 허용 붕괴 범위(15%)를 단순 적용.</li>
-<li>지진 저항 등급: 지진 시나리오와 같은 층 전단 내력 식(기둥 휨 항복 · 벽 전단강도 × 연성)으로 계산한 기여율. 10% 이상 핵심, 5% 이상 주의, 2% 이상 국부.</li>
-<li>이 모델에서 벽은 바닥의 수직 하중을 받지 않습니다 (골조가 받음). 실제 벽식 구조의 내력벽은 수직 하중도 받으므로 철거 영향이 더 큽니다.</li>
-<li>벽은 같은 자리에 위아래로 나뉜 패널을 묶어 한 번에 없앴습니다 (한 면의 가로 절반 폭 단위). 보가 옆 기둥으로 하중을 넘기는 효과는 "받쳐 주는 부재의 절반 초과가 살아 있으면 버팀" 규칙으로 단순화되어 있습니다.</li></ul>`,
+<li>Each structural column and wall on level ${floor} was removed in an independent run. Support was rechecked immediately; collisions and debris load were simulated for up to 8 s.</li>
+<li>Gravity rating: critical if at least ${pct(GSA_LIMIT)} of upper slabs collapse outside the directly supported bay; a simplified application of the GSA alternate-path 15% collapse limit.</li>
+<li>Seismic rating: story shear capacity share using the earthquake model (column flexural yield and wall shear strength × ductility). Critical ≥10%, caution ≥5%, local ≥2%.</li>
+<li>Walls carry no vertical slab load in this frame model. Real load-bearing walls may also carry gravity loads, so removal can have greater consequences.</li>
+<li>Vertically split wall panels at the same location were removed as a group (half a facade bay). Beam load redistribution is simplified to the rule that more than half of supporting members must survive.</li></ul>`,
     ),
   ].join('');
 
   return page({
-    title: '핵심 부재 지도',
-    subtitle: `${type} ${spec.floors}층 · ${floor}층 기둥 · 벽을 하나씩 없앴을 때`,
+    title: 'Key member map',
+    subtitle: `${type} / ${spec.floors} floors · L${floor} columns & walls / individual removal tests`,
     meta: [
-      ['건물', `${type} ${spec.floors}층`],
-      ['분석 층', `${floor}층`],
-      ['분석 부재', `${results.length}개`],
+      ['Building', `${type} / ${spec.floors} floors`],
+      ['Analysis level', `L${floor}`],
+      ['Analyzed members', `${results.length}`],
     ],
     summary: keyFindings(data),
     body,
@@ -346,20 +346,20 @@ export function renderKeyMembersReport(data) {
 export function keyMembersCsv({ results }) {
   return toCsv([
     [
-      '번호',
-      '부재 ID',
-      '부재',
-      '종류',
-      '재료',
-      '종합 등급',
-      '수직하중 등급',
-      '즉시 위층바닥 붕괴율',
-      '확산 붕괴율',
-      '위층바닥 붕괴율',
-      '함께 무너진 구조 부재',
-      '지진 등급',
-      '지진 저항 기여율',
-      '피해 층',
+      'No.',
+      'Member ID',
+      'Member',
+      'Kind',
+      'Materials',
+      'Overall grade',
+      'Gravity grade',
+      'Immediate upper-slab collapse ratio',
+      'Spread collapse ratio',
+      'Upper-slab collapse ratio',
+      'Other collapsed members',
+      'Seismic grade',
+      'Seismic resistance share',
+      'Affected floors',
       'x',
       'z',
     ],
@@ -367,7 +367,7 @@ export function keyMembersCsv({ results }) {
       r.short,
       r.id,
       r.label,
-      r.kind === 'wall' ? '벽' : '기둥',
+      r.kind === 'wall' ? 'wall' : 'column',
       MATERIALS[r.material]?.label ?? r.material,
       GRADES[r.grade].short,
       GRADES[r.gravity].short,

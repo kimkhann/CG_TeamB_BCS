@@ -40,10 +40,10 @@ export function runExplosion(ctx, scenario) {
     ];
     const len = Math.hypot(...dir) || 1;
     if (len > radius) continue;
-    const power = (1 - len / radius) * 6 * power * part.sim.body.mass;
+    const impulse = (1 - len / radius) * 6 * power * part.sim.body.mass;
     ctx.applyImpulse(
       part,
-      dir.map((v) => (v / len) * power),
+      dir.map((v) => (v / len) * impulse),
     );
   }
 }

@@ -1,20 +1,11 @@
-/**
- * [C · 화면] ③ 붕괴 시뮬레이션
- *
- *  보기     외벽 숨기기, 단면 보기(고른 층보다 위를 숨겨 내부 보기)
- *  대상     부재 하나(클릭 또는 층 · 기둥 버튼) / 위치 · 범위(층을 고르고 바닥 클릭 + 반경)
- *  시나리오 종류 · 세기 · 실행, 선택한 층 붕괴 시연
- *  재생     일시정지 · 속도 · 초기화 (Space / R)
- *  범례 · 이벤트 로그 · 결과
- *
- * 🔧 임시 버전(베이스): 기능 위주의 단순한 화면.
- * TODO(C): 화면 디자인, 결과 화면, "재료만 바꿔 다시 실행" 비교
- */
+import { createResultsPanel } from '../resultsPanel.js';
+import { presentReport } from '../reportPresentation.js';
 
 import { store } from '../../core/state.js';
 import { emit, on, EVENTS } from '../../core/events.js';
-import { SCENARIOS, BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
+import { SCENARIOS, BUILDING_TYPES, MATERIALS } from '../english.js';
 import { STATE_COLORS } from '../../data/stateColors.js';
+import { partLabel } from '../english.js';
 import { h } from '../dom.js';
 import { columnsOf, floorCount } from '../floors.js';
 import {
@@ -33,11 +24,11 @@ import {
 } from '../../sim/reports/index.js';
 
 const STATE_LABELS = {
-  intact: '정상',
-  damaged: '손상',
-  failed: '기능 상실',
-  falling: '낙하 중',
-  settled: '정지',
+  intact: 'Intact',
+  damaged: 'Damaged',
+  failed: 'Failed',
+  falling: 'Falling',
+  settled: 'Settled',
 };
 
 /**
@@ -52,6 +43,7 @@ export function renderSimulateScreen(root, ctx) {
   const values = Object.fromEntries(Object.entries(SCALES).map(([k, s]) => [k, s.defaultValue]));
   let distanceKm = SCALES.earthquake.distance.defaultValue;
   let partFloor = 1;
+  let disposed = false;
   const timers = [];
   const unsubscribers = [];
   // size slider and real-world description (ranges and conversions in B's sim/scenarioScale.js)
@@ -105,7 +97,6 @@ export function renderSimulateScreen(root, ctx) {
   };
   const findPart = (id) => (id ? ctx.getParts().find((p) => p.id === id) : null);
 
-  // ── 보기 ─────────────────────────────────────────
   const facadeButton = h('button', {
     class: 'btn toggle',
     onclick: () => store.set({ hideFacade: !store.get().hideFacade }),
@@ -113,52 +104,52 @@ export function renderSimulateScreen(root, ctx) {
   const cutSelect = h(
     'select',
     {
-      'aria-label': '단면 보기',
+      'aria-label': 'Section view',
       onchange: (e) => store.set({ cutFloor: e.target.value ? Number(e.target.value) : null }),
     },
-    h('option', { value: '' }, '전체 보기'),
-    Array.from({ length: floors }, (_, i) => h('option', { value: i + 1 }, `${i + 1}층까지 보기`)),
+    h('option', { value: '' }, 'Full building'),
+    Array.from({ length: floors }, (_, i) =>
+      h('option', { value: i + 1 }, `Through level ${i + 1}`),
+    ),
   );
 
-  // ── 대상: 방식 선택 ─────────────────────────────────
   const modeButtons = ['part', 'area'].map((mode) =>
     h(
       'button',
       { class: 'btn seg', onclick: () => setMode(mode) },
-      mode === 'part' ? '부재 하나' : '위치 · 범위',
+      mode === 'part' ? 'Single member' : 'Area target',
     ),
   );
   function setMode(mode) {
     const patch = { targetMode: mode };
-    // 위치 지정은 내부가 보여야 하므로 단면 보기를 켭니다.
+
     if (mode === 'area' && !store.get().cutFloor) patch.cutFloor = 1;
     store.set(patch);
   }
 
-  // 부재 방식: 층 + 기둥 버튼
   const partFloorSelect = h(
     'select',
     {
-      'aria-label': '기둥 층',
+      'aria-label': 'Column level',
       onchange: (e) => {
         partFloor = Number(e.target.value);
         drawColumnButtons();
       },
     },
-    Array.from({ length: floors }, (_, i) => h('option', { value: i + 1 }, `${i + 1}층`)),
+    Array.from({ length: floors }, (_, i) => h('option', { value: i + 1 }, `Level ${i + 1}`)),
   );
   const columnGrid = h('div', { class: 'column-grid' });
   function drawColumnButtons() {
     columnGrid.innerHTML = '';
     for (const col of columnsOf(ctx.getParts(), partFloor)) {
-      const name = col.label.replace(/^\d+층 /, '').replace(/ 기둥$/, '');
+      const name = col.grid ? `${String.fromCharCode(65 + col.grid.i)}${col.grid.j + 1}` : col.id;
       columnGrid.append(
         h(
           'button',
           {
             class: 'btn column',
             'data-part': col.id,
-            title: col.label,
+            title: partLabel(col.label),
             onclick: () => store.set({ selectedPartId: col.id }),
           },
           name,
@@ -170,19 +161,20 @@ export function renderSimulateScreen(root, ctx) {
   const partPanel = h(
     'div',
     { class: 'mode-panel' },
-    h('label', { class: 'field' }, h('span', {}, '기둥 바로 고르기'), partFloorSelect),
+    h('label', { class: 'field' }, h('span', {}, 'Select a column'), partFloorSelect),
     columnGrid,
-    h('p', { class: 'hint' }, '또는 3D 화면에서 부재(기둥 · 보 · 바닥 · 벽)를 클릭하세요.'),
+    h('p', { class: 'hint' }, 'Or click a column, beam, slab or wall in the 3D view.'),
   );
 
-  // 위치 · 범위 방식: 층 + 반경
   const areaFloorSelect = h(
     'select',
     {
-      'aria-label': '위치 층',
+      'aria-label': 'Target level',
       onchange: (e) => store.set({ cutFloor: Number(e.target.value), areaTarget: null }),
     },
-    Array.from({ length: floors }, (_, i) => h('option', { value: i + 1 }, `${i + 1}층 내부`)),
+    Array.from({ length: floors }, (_, i) =>
+      h('option', { value: i + 1 }, `Level ${i + 1} interior`),
+    ),
   );
   const radiusValue = h('output', {});
   const radiusInput = h('input', {
@@ -202,23 +194,22 @@ export function renderSimulateScreen(root, ctx) {
   const areaPanel = h(
     'div',
     { class: 'mode-panel' },
-    h('label', { class: 'field' }, h('span', {}, '층 (위층은 숨겨짐)'), areaFloorSelect),
-    h('label', { class: 'field' }, h('span', {}, '범위(반경) ', radiusValue), radiusInput),
-    h('p', { class: 'hint' }, '3D 화면에서 바닥을 클릭하면 그 지점(바닥 위 1m)이 대상이 됩니다.'),
+    h('label', { class: 'field' }, h('span', {}, 'Level (upper floors hidden)'), areaFloorSelect),
+    h('label', { class: 'field' }, h('span', {}, 'Target radius ', radiusValue), radiusInput),
+    h('p', { class: 'hint' }, 'Click the floor in the 3D view to place a target 1 m above it.'),
   );
 
   const targetInfo = h('p', { class: 'target' });
 
-  // ── 시나리오 ─────────────────────────────────────
-  const runButton = h('button', { class: 'btn danger', onclick: run }, '실행');
+  const runButton = h('button', { class: 'btn danger', onclick: run }, 'Run scenario →');
   const demoButton = h(
     'button',
     {
       class: 'btn',
       onclick: runDemo,
-      title: '건물을 초기화하고 고른 층의 앞줄 기둥 두 개를 차례로 부숩니다.',
+      title: 'Reset the building, then fail two front-row columns on the selected level.',
     },
-    '▷ 선택한 층 붕괴 시연',
+    '▷ Demonstrate floor collapse',
   );
 
   function currentTarget() {
@@ -264,27 +255,31 @@ export function renderSimulateScreen(root, ctx) {
     });
   }
 
-  // ── 재생 ─────────────────────────────────────────
   const pauseButton = h('button', {
     class: 'btn',
     onclick: () => store.set({ paused: !store.get().paused }),
   });
 
-  // ── 범례 ─────────────────────────────────────────
   const legend = h(
     'ul',
     { class: 'legend' },
-    Object.values(STATE_COLORS).map(({ color, label }) =>
+    Object.entries(STATE_COLORS).map(([key, { color }]) =>
       h(
         'li',
         {},
         h('i', { style: `background:${color ?? 'linear-gradient(90deg,#9a9b97,#a45a3f)'}` }),
-        label,
+        {
+          intact: 'Intact',
+          selected: 'Selected',
+          damaged: 'Damaged',
+          falling: 'Falling',
+          settled: 'Debris',
+        }[key],
       ),
     ),
   );
 
-  // ── 이벤트 로그 ───────────────────────────────────
+  // ── Event record ───────────────────────────────────
   const logList = h('ol', { class: 'log' });
   function log(text) {
     const time = (store.get().simTime ?? 0).toFixed(1);
@@ -297,45 +292,48 @@ export function renderSimulateScreen(root, ctx) {
     on(EVENTS.SCENARIO_RUN, ({ type, target }) => {
       const what =
         target?.kind === 'part'
-          ? (findPart(target.partId)?.label ?? '부재')
+          ? partLabel(findPart(target.partId)?.label) || 'Member'
           : target?.kind === 'area'
-            ? `반경 ${target.radius}m 범위`
-            : '건물 전체';
+            ? `Area · ${target.radius} m radius`
+            : 'Whole building';
       log(`${SCENARIOS[type]?.label ?? type} → ${what}`);
     }),
     on(EVENTS.PART_FAILED, ({ partId }) => {
       const part = findPart(partId);
-      if (part?.structural) log(`${part.label} 기능 상실`);
+      if (part?.structural) log(`${partLabel(part.label)} failed`);
     }),
     on(EVENTS.PART_DETACHED, () => {
       detachedCount++;
       if (detachTimer) return;
       detachTimer = setTimeout(() => {
-        log(`부재 ${detachedCount}개가 지지를 잃고 떨어짐`);
+        log(`${detachedCount} members lost support`);
         detachedCount = 0;
         detachTimer = null;
       }, 400);
     }),
     on(EVENTS.SIM_FINISHED, (r) => {
-      log(`모든 움직임 정지 · 무너진 비율 ${Math.round(r.collapsedRatio * 100)}%`);
+      log(`Motion settled · ${Math.round(r.collapsedRatio * 100)}% collapsed`);
     }),
     on(EVENTS.SIM_RESET, () => {
+      timers.forEach(clearTimeout);
+      clearTimeout(detachTimer);
+      detachTimer = null;
+      detachedCount = 0;
       logList.innerHTML = '';
-      log('건물 초기화');
+      log('Building reset');
     }),
   );
 
-  // ── 결과 ─────────────────────────────────────────
-  const resultsBox = h('dl', { class: 'results' });
+  const observations = createResultsPanel(ctx);
+  document.getElementById('app').append(observations.element);
 
-  // ── 갱신 ─────────────────────────────────────────
   function refresh() {
     const state = store.get();
     const { selectedPartId, paused, results, targetMode, areaTarget, hideFacade, cutFloor } = state;
     const needsTarget = SCENARIOS[scenarioType].needsTarget;
     updateScale();
 
-    facadeButton.textContent = hideFacade ? '외벽 보이기' : '외벽 숨기기 · 골조 보기';
+    facadeButton.textContent = hideFacade ? 'Show facade' : 'Hide facade / frame view';
     facadeButton.classList.toggle('on', hideFacade);
     cutSelect.value = cutFloor ? String(cutFloor) : '';
     if (cutFloor) areaFloorSelect.value = String(cutFloor);
@@ -357,56 +355,41 @@ export function renderSimulateScreen(root, ctx) {
     if (targetMode === 'part') {
       const part = findPart(selectedPartId);
       targetInfo.textContent = part
-        ? `${part.label} · ${MATERIALS[part.material]?.label} · ${STATE_LABELS[part.state]} · 체력 ${Math.round(part.hp * 100)}%`
+        ? `${partLabel(part.label)} · ${MATERIALS[part.material]?.label} · ${STATE_LABELS[part.state]} · Health ${Math.round(part.hp * 100)}%`
         : needsTarget
-          ? '대상 부재를 고르세요.'
-          : '지진은 대상 없이 건물 전체에 작용합니다.';
+          ? 'Select a member to apply this scenario.'
+          : 'Earthquakes act on the whole building; no target needed.';
     } else {
       targetInfo.textContent = areaTarget
-        ? `${areaTarget.floor ?? cutFloor ?? 1}층 내부 · 반경 ${areaTarget.radius} m · 위치 (${areaTarget.position.map((v) => v.toFixed(1)).join(', ')})`
+        ? `Level ${areaTarget.floor ?? cutFloor ?? 1} · radius ${areaTarget.radius} m · XYZ (${areaTarget.position.map((v) => v.toFixed(1)).join(', ')})`
         : needsTarget
-          ? '3D 화면에서 바닥을 클릭해 위치를 고르세요.'
-          : '지진은 대상 없이 건물 전체에 작용합니다.';
+          ? 'Click the floor in the 3D view to place the target.'
+          : 'Earthquakes act on the whole building; no target needed.';
     }
     runButton.disabled = needsTarget && !currentTarget();
-    pauseButton.textContent = paused ? '▶ 재개' : 'Ⅱ 일시정지';
+    pauseButton.textContent = paused ? '▶ Resume' : 'Ⅱ Pause';
 
-    resultsBox.innerHTML = '';
-    if (results) {
-      const first = findPart(results.firstFailedPartId);
-      const rows = [
-        ['경과 시간', `${results.time.toFixed(1)} s`],
-        [
-          '무너진 부재',
-          `${results.collapsedParts} / ${results.totalParts} (${Math.round(results.collapsedRatio * 100)}%)`,
-        ],
-        ['무너진 층', `${results.floorsLost}`],
-        ['처음 무너진 부재', first?.label ?? '-'],
-        ['상태', results.finished ? '정지' : '진행 중'],
-      ];
-      for (const [k, v] of rows) resultsBox.append(h('dt', {}, k), h('dd', {}, v));
-    }
+    observations.refresh(state);
   }
 
-  // ── 조립 ─────────────────────────────────────────
   root.append(
     h(
       'header',
       { class: 'panel-header' },
       h('p', { class: 'step' }, 'STEP 3 / 3'),
-      h('h1', {}, '붕괴 시뮬레이션'),
-      h('p', { class: 'muted' }, `${BUILDING_TYPES[spec.type].label} · ${spec.floors}층`),
+      h('h1', {}, 'Collapse experiment'),
+      h('p', { class: 'muted' }, `${BUILDING_TYPES[spec.type].label} · ${spec.floors} floors`),
     ),
     h(
       'section',
       { class: 'group' },
-      h('h2', {}, '보기'),
+      h('h2', {}, '01 / View'),
       h('div', { class: 'row' }, facadeButton, cutSelect),
     ),
     h(
       'section',
       { class: 'group' },
-      h('h2', {}, '대상'),
+      h('h2', {}, '02 / Target'),
       h('div', { class: 'segmented' }, modeButtons),
       partPanel,
       areaPanel,
@@ -415,11 +398,11 @@ export function renderSimulateScreen(root, ctx) {
     h(
       'section',
       { class: 'group' },
-      h('h2', {}, '시나리오'),
+      h('h2', {}, '03 / Scenario'),
       h(
         'label',
         { class: 'field' },
-        h('span', {}, '종류'),
+        h('span', {}, 'Type'),
         h(
           'select',
           {
@@ -440,7 +423,7 @@ export function renderSimulateScreen(root, ctx) {
     h(
       'section',
       { class: 'group' },
-      h('h2', {}, '재생'),
+      h('h2', {}, '04 / Playback'),
       h(
         'div',
         { class: 'row' },
@@ -448,20 +431,19 @@ export function renderSimulateScreen(root, ctx) {
         h(
           'select',
           {
-            'aria-label': '재생 속도',
+            'aria-label': 'Playback speed',
             onchange: (e) => store.set({ speed: Number(e.target.value) }),
           },
           [0.25, 0.5, 1, 2].map((v) =>
             h('option', { value: v, selected: v === store.get().speed }, `${v}×`),
           ),
         ),
-        h('button', { class: 'btn', onclick: () => emit(EVENTS.SIM_RESET) }, '↺ 초기화'),
+        h('button', { class: 'btn', onclick: () => emit(EVENTS.SIM_RESET) }, '↺ Reset'),
       ),
-      h('p', { class: 'hint' }, '단축키: Space 일시정지 · R 초기화'),
+      h('p', { class: 'hint' }, 'SPACE pause / resume · R reset'),
     ),
-    h('section', { class: 'group' }, h('h2', {}, '상태 색'), legend),
-    h('section', { class: 'group' }, h('h2', {}, '이벤트 로그'), logList),
-    h('section', { class: 'group' }, h('h2', {}, '결과'), resultsBox),
+    h('section', { class: 'group' }, h('h2', {}, 'Member states'), legend),
+    h('section', { class: 'group' }, h('h2', {}, 'Event record'), logList),
     reportSection(),
     h(
       'div',
@@ -469,124 +451,189 @@ export function renderSimulateScreen(root, ctx) {
       h(
         'button',
         { class: 'btn', onclick: () => store.set({ screen: 'configure' }) },
-        '← 설정으로',
+        '← Edit specification',
       ),
     ),
   );
 
   drawColumnButtons();
-  log('시뮬레이션 준비 완료');
+  log('Experiment ready');
 
   // ── Reports (computed and generated by B's sim/reports) ───────────
   function reportSection() {
-    let reportType = 'log';
-    let reportFloor = 1;
+    let reportType = '';
+    let reportFloor = '';
+    let format = '';
     let report = null;
     let busy = false;
+    const placeholder = (text) => h('option', { value: '', selected: true, disabled: true }, text);
     const typeSelect = h(
       'select',
       {
-        'aria-label': '보고서 종류',
+        'aria-label': 'Report type',
         onchange: (e) => {
           reportType = e.target.value;
-          update();
+          reportFloor = '';
+          format = '';
+          floorSelect.replaceChildren(
+            placeholder('Select analysis level'),
+            ...(REPORTS[reportType].needsFloor
+              ? Array.from({ length: floors }, (_, i) =>
+                  h('option', { value: i + 1 }, `Level ${i + 1} columns & walls`),
+                )
+              : [h('option', { value: 'building' }, 'Whole building')]),
+          );
+          floorSelect.value = '';
+          invalidate();
         },
       },
+      placeholder('Select report type'),
       Object.values(REPORTS).map((r) => h('option', { value: r.id }, r.label)),
     );
     const floorSelect = h(
       'select',
-      { 'aria-label': '분석할 층', onchange: (e) => (reportFloor = Number(e.target.value)) },
-      Array.from({ length: floors }, (_, i) =>
-        h('option', { value: i + 1 }, `${i + 1}층 기둥 · 벽`),
-      ),
+      {
+        'aria-label': 'Analysis level',
+        onchange: (e) => {
+          reportFloor = e.target.value;
+          format = '';
+          invalidate();
+        },
+      },
+      placeholder('Select analysis level'),
     );
-    const floorField = h('label', { class: 'field' }, h('span', {}, '분석할 층'), floorSelect);
+    const formatButtons = ['html', 'csv', 'pdf'].map((value) =>
+      h('button', {
+        type: 'button',
+        class: 'btn report-format-button',
+        'data-format': value,
+        'aria-pressed': 'false',
+        onclick: () => {
+          format = value;
+          invalidate();
+        },
+      }, value.toUpperCase()),
+    );
+    const floorField = h('label', { class: 'field' }, h('span', {}, 'Analysis level'), floorSelect);
+    const formatField = h('div', { class: 'field' }, h('span', {}, 'File format'),
+      h('div', { class: 'report-format-buttons', role: 'group', 'aria-label': 'Report format' }, formatButtons));
     const description = h('p', { class: 'hint' });
-    const status = h('p', { class: 'hint report-status' });
-    const makeButton = h('button', { class: 'btn primary', onclick: make }, '보고서 만들기');
-    const htmlButton = h(
-      'button',
-      {
-        class: 'btn',
-        onclick: () => save(`${report.baseName}.html`, report.html, 'text/html'),
-      },
-      '보고서 (.html)',
-    );
-    const csvButton = h(
-      'button',
-      {
-        class: 'btn',
-        onclick: () => save(`${report.baseName}.csv`, report.csv, 'text/csv'),
-      },
-      '원자료 (.csv)',
-    );
-    const openButton = h(
-      'button',
-      { class: 'btn', onclick: () => openHtml(report.html) },
-      '새 창에서 보기 · PDF',
-    );
-    const downloads = h(
-      'div',
-      { class: 'row report-downloads' },
-      htmlButton,
-      csvButton,
-      openButton,
-    );
+    const status = h('p', { class: 'hint report-status', role: 'status', 'aria-live': 'polite' });
+    const progress = h('progress', {
+      class: 'report-progress',
+      max: 1,
+      value: 0,
+      'aria-label': 'Report analysis progress',
+    });
+    const makeButton = h('button', { class: 'btn primary', onclick: make }, 'Generate report');
+    const outputButton = h('button', { class: 'btn', onclick: () => deliver() });
+    const downloads = h('div', { class: 'row report-downloads' }, outputButton);
 
-    async function save(name, text, mime) {
-      const result = await downloadText(name, text, mime);
-      if (result === 'failed') status.textContent = '내려받기를 할 수 없는 환경입니다.';
-      else if (result === 'declined') status.textContent = '내려받기를 취소했습니다.';
+    function invalidate() {
+      report = null;
+      status.textContent = '';
+      update();
     }
-
     function update() {
-      const info = REPORTS[reportType];
-      description.textContent = info.description;
-      floorField.hidden = !info.needsFloor;
+      description.textContent = REPORTS[reportType]?.description ?? '';
+      description.hidden = !reportType;
+      floorField.hidden = !reportType;
+      formatField.hidden = !reportType || !reportFloor;
+      makeButton.hidden = !reportType || !reportFloor || !format;
       makeButton.disabled = busy;
+      typeSelect.disabled = busy;
+      floorSelect.disabled = busy;
+      formatButtons.forEach((button) => {
+        const selected = button.dataset.format === format;
+        button.disabled = busy;
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+      makeButton.textContent = busy ? 'Analyzing…' : 'Generate report';
       downloads.hidden = !report || busy;
-      openButton.hidden = !canOpenWindow();
+      outputButton.disabled = !report || busy;
+      outputButton.textContent =
+        format === 'pdf' ? 'Open / Print PDF' : `Download ${format.toUpperCase()}`;
+      progress.hidden = !busy;
     }
-
+    async function deliver(pdfWindow = null) {
+      if (!report) return;
+      if (format === 'pdf') {
+        if (pdfWindow && !pdfWindow.closed) {
+          pdfWindow.document.open();
+          pdfWindow.document.write(report.html);
+          pdfWindow.document.close();
+          pdfWindow.opener = null;
+        } else if (canOpenWindow()) openHtml(report.html);
+        else await downloadText(`${report.baseName}.html`, report.html, 'text/html');
+      } else {
+        const result = await downloadText(
+          `${report.baseName}.${format}`,
+          report[format],
+          format === 'html' ? 'text/html' : 'text/csv',
+        );
+        if (result === 'failed')
+          status.textContent = 'Downloads are unavailable in this environment.';
+        else if (result === 'declined') status.textContent = 'Download cancelled.';
+      }
+    }
     async function make() {
+      if (busy || !reportType || !reportFloor || !format) return;
+      // Reserve the PDF window during the click, before the asynchronous analysis.
+      const pdfWindow =
+        format === 'pdf' && canOpenWindow() ? window.open('about:blank', '_blank') : null;
+      if (format === 'pdf' && canOpenWindow() && !pdfWindow) {
+        status.textContent = 'Allow pop-ups to open the PDF print view.';
+        return;
+      }
+      if (pdfWindow) {
+        pdfWindow.document.write(
+          '<!doctype html><title>Generating report</title><p>Generating report…</p>',
+        );
+        pdfWindow.document.close();
+      }
       busy = true;
       report = null;
-      // pause the on-screen simulation while computing (faster; restored afterwards)
       const wasPaused = store.get().paused;
       store.set({ paused: true });
-      status.textContent = '준비 중…';
+      progress.value = 0;
+      status.textContent = 'Preparing analysis…';
       update();
       try {
-        // the log report reads the current simulation; the others build fresh buildings with the same spec (the view is untouched)
         report = await buildReport(reportType, {
           spec: store.get().spec,
           sim: ctx.getSim?.(),
           parts: ctx.getParts(),
-          floor: reportFloor,
+          floor: reportFloor === 'building' ? 1 : Number(reportFloor),
           onProgress: (done, total, text) => {
+            progress.value = total > 0 ? done / total : 0;
             status.textContent = `${Math.round((done / total) * 100)}% · ${text}`;
           },
         });
-        status.textContent = `완료: ${report.title} — 아래에서 내려받으세요.`;
+        report.html = presentReport(report.html, reportType);
+        status.textContent = `Ready: ${report.title}`;
+        await deliver(pdfWindow);
       } catch (error) {
         console.error(error);
-        status.textContent = `실패: ${error.message}`;
+        pdfWindow?.close();
+        status.textContent = `Failed: ${error.message}`;
+      } finally {
+        busy = false;
+        if (!disposed) store.set({ paused: wasPaused });
+        update();
       }
-      busy = false;
-      store.set({ paused: wasPaused });
-      update();
     }
-
     update();
     return h(
       'section',
-      { class: 'group' },
-      h('h2', {}, '보고서'),
-      h('label', { class: 'field' }, h('span', {}, '종류'), typeSelect),
+      { class: 'group report-block' },
+      h('h2', {}, 'Analysis reports'),
+      h('label', { class: 'field' }, h('span', {}, 'Type'), typeSelect),
       floorField,
+      formatField,
       description,
       makeButton,
+      progress,
       status,
       downloads,
     );
@@ -598,6 +645,8 @@ export function renderSimulateScreen(root, ctx) {
       else refresh();
     },
     cleanup() {
+      disposed = true;
+      observations.element.remove();
       timers.forEach(clearTimeout);
       unsubscribers.forEach((off) => off());
       clearTimeout(detachTimer);

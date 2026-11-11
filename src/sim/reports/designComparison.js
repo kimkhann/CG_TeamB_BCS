@@ -12,7 +12,7 @@
  *   Every test uses the same seed, so regenerating gives the same result.
  */
 
-import { BUILDING_TYPES, MATERIALS } from '../../data/ids.js';
+import { BUILDING_TYPES, MATERIALS } from '../../ui/english.js';
 import { makeBuilding } from '../../build/generator.js';
 import { normalizeSpec } from '../../core/types.js';
 import { buildGridFrame } from '../../build/frame.js';
@@ -44,9 +44,9 @@ const M_MIN = 4;
 const M_MAX = 9;
 
 const MATERIAL_SETS = [
-  { name: 'RC 골조', materials: { frame: 'rc', slab: 'rc', wall: 'rc' } },
-  { name: '철골 + 패널', materials: { frame: 'steel', slab: 'rc', wall: 'panel' } },
-  { name: '목조 + 벽돌', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
+  { name: 'RC frame', materials: { frame: 'rc', slab: 'rc', wall: 'rc' } },
+  { name: 'Steel + panel', materials: { frame: 'steel', slab: 'rc', wall: 'panel' } },
+  { name: 'Timber + brick', materials: { frame: 'wood', slab: 'wood', wall: 'brick' } },
 ];
 
 /** Piloti alternative with outer walls on the ground floor (same as A's piloti builder except the wall condition) */
@@ -74,7 +74,7 @@ const materialText = (m) =>
 /** Alternatives to compare */
 export function designVariants(rawSpec) {
   const spec = normalizeSpec(rawSpec);
-  const variants = [{ name: '현재 설계', spec, build: makeBuilding, current: true }];
+  const variants = [{ name: 'Current design', spec, build: makeBuilding, current: true }];
   for (const set of MATERIAL_SETS) {
     if (sameMaterials(set.materials, spec.materials)) continue;
     variants.push({
@@ -84,7 +84,7 @@ export function designVariants(rawSpec) {
     });
   }
   if (spec.type === 'piloti') {
-    variants.push({ name: '현재 + 1층 벽 보강', spec, build: pilotiWithGroundWalls });
+    variants.push({ name: 'Current + ground-floor walls', spec, build: pilotiWithGroundWalls });
   }
   return variants.map((v) => ({ ...v, materialText: materialText(v.spec.materials) }));
 }
@@ -153,17 +153,17 @@ export async function runDesignComparison(spec, onProgress = () => {}) {
   const step = (text) => onProgress(done++, total, text);
   const rows = [];
   for (const v of variants) {
-    step(`${v.name}: 버티는 최대 규모 찾는 중`);
+    step(`${v.name}: Searching magnitude limit`);
     const limit = await limitMagnitude(v);
-    step(`${v.name}: 기준 지진 (규모 6.5)`);
+    step(`${v.name}: Reference earthquake (M 6.5)`);
     const quake = await referenceQuake(v);
-    step(`${v.name}: 60분 화재`);
+    step(`${v.name}: 60-minute fire`);
     const fire = await fireTest(v);
     const parts = v.build(v.spec);
     const mass = parts.reduce((s, p) => s + massOf(p), 0);
     rows.push({ ...v, limit, quake, fire, mass, build: undefined });
   }
-  onProgress(total, total, '완료');
+  onProgress(total, total, 'Complete');
   return { spec: normalizeSpec(spec), rows };
 }
 
@@ -175,30 +175,30 @@ function comparisonFindings({ rows }) {
   const best = [...rows].sort((a, b) => b.limit.value - a.limit.value)[0];
   const pga = pgaFromMagnitude(current.limit.value, LIMIT_DISTANCE_KM);
   out.push(
-    `현재 설계는 진앙 ${LIMIT_DISTANCE_KM} km 지진에서 <b>${limitText(current.limit)}</b>까지 버팁니다 (지반 가속도 ${num(pga, 2)} g, 진도 ${mmiFromPga(pga).level}, 국내 설계지진의 ${num(pga / DESIGN_PGA)}배).`,
+    `The current design withstands <b>${limitText(current.limit)}</b> at ${LIMIT_DISTANCE_KM} km (PGA ${num(pga, 2)} g; MMI ${mmiFromPga(pga).level}; ${num(pga / DESIGN_PGA)}× the Korean design reference).`,
   );
   if (best !== current && best.limit.value > current.limit.value) {
     out.push(
-      `가장 잘 버티는 안은 <b>${esc(best.name)}</b> (${limitText(best.limit)}) — 현재보다 규모 ${num(best.limit.value - current.limit.value)} 큰 지진까지 견딥니다.`,
+      `<b>${esc(best.name)}</b> performs best (${limitText(best.limit)}), withstanding a magnitude ${num(best.limit.value - current.limit.value)} above the current design.`,
     );
   } else {
-    out.push('비교한 대안 중 현재 설계보다 지진에 더 잘 버티는 안은 없었습니다.');
+    out.push('No tested alternative outperformed the current design under earthquake loading.');
   }
-  const soft = rows.find((r) => r.name.includes('1층 벽'));
+  const soft = rows.find((r) => r.name.includes('ground-floor walls'));
   if (soft) {
     out.push(
-      `필로티 1층에 벽을 두면 버티는 최대 규모가 ${limitText(current.limit)} → <b>${limitText(soft.limit)}</b>로 바뀝니다 (연약층 보강 효과).`,
+      `Adding ground-floor walls changes the piloti limit from ${limitText(current.limit)} to <b>${limitText(soft.limit)}</b> (soft-story retrofit).`,
     );
   }
   const worstFloor = [...(current.quake.floorDamage ?? [])].sort((a, b) => b.ratio - a.ratio)[0];
   if (worstFloor && worstFloor.ratio > 0.05) {
     out.push(
-      `규모 6.5 기준 지진에서 현재 설계는 <b>${worstFloor.floor}층</b> 피해가 가장 큽니다 (${pct(worstFloor.ratio)}).`,
+      `Under the M 6.5 reference earthquake, <b>level ${worstFloor.floor}</b> suffers the most damage (${pct(worstFloor.ratio)}).`,
     );
   }
   const fireBest = [...rows].sort((a, b) => a.fire.collapsedRatio - b.fire.collapsedRatio)[0];
   out.push(
-    `1층 60분 화재에서 현재 설계는 구조 부재 ${pct(current.fire.collapsedRatio)}가 무너지고, 가장 적게 무너지는 안은 ${esc(fireBest.name)} (${pct(fireBest.fire.collapsedRatio)})입니다.`,
+    `Under a 60-minute ground-floor fire, ${pct(current.fire.collapsedRatio)} of the current structural members collapse. ${esc(fireBest.name)} has the lowest collapse ratio (${pct(fireBest.fire.collapsedRatio)}).`,
   );
   return out;
 }
@@ -210,13 +210,13 @@ export function renderComparisonReport(data) {
 
   const summaryTable = table(
     [
-      '안',
-      '재료 (기둥 · 벽 · 바닥)',
-      '무게',
-      '버티는 최대 규모',
-      '기준 지진 붕괴율',
-      '무너진 층',
-      '60분 화재 붕괴율',
+      'Alternative',
+      'Materials (frame / wall / slab)',
+      'Mass',
+      'Magnitude limit',
+      'Reference quake collapse ratio',
+      'Floors lost',
+      '60-minute fire Collapse ratio',
     ],
     rows.map((r) => [
       `<b>${esc(r.name)}</b>`,
@@ -244,9 +244,9 @@ export function renderComparisonReport(data) {
     ...new Set(rows.flatMap((r) => (r.quake.floorDamage ?? []).map((f) => f.floor))),
   ].sort((a, b) => a - b);
   const floorTable = table(
-    ['층', ...rows.map((r) => r.name)],
+    ['Level', ...rows.map((r) => r.name)],
     floors.map((f) => [
-      `${f}층`,
+      `L${f}`,
       ...rows.map((r) => {
         const v = r.quake.floorDamage?.find((x) => x.floor === f)?.ratio ?? 0;
         const bg = v >= 0.5 ? '#f6d5d2' : v >= 0.15 ? '#fbe6c8' : 'transparent';
@@ -277,42 +277,42 @@ export function renderComparisonReport(data) {
       label: r.name,
       value: r.fire.collapsedRatio * 100,
       color: color(i),
-      text: `${pct(r.fire.collapsedRatio)} · 무너진 층 ${r.fire.floorsLost}`,
+      text: `${pct(r.fire.collapsedRatio)} · Floors lost ${r.fire.floorsLost}`,
     })),
     { max: 100 },
   );
 
   const method = `<ul class="note">
-<li>버티는 최대 규모: 진앙 ${LIMIT_DISTANCE_KM} km 지진의 규모를 ${M_MIN.toFixed(1)} ~ ${M_MAX.toFixed(1)}에서 0.1 단위로 이분 탐색. 층 하나 이상 무너지거나 구조 부재 20% 이상이 무너지면 '붕괴'.</li>
-<li>지진 피해: 규모 · 거리 → 지반 가속도 (Joyner &amp; Boore 1981), 층 질량 × 높이로 층 전단력을 나누는 등가정적 방식(KDS 41 17 00 단순화).</li>
-<li>화재: 표준화재곡선(ISO 834) ${FIRE_MINUTES}분, 1층 중앙 반경 4 m. 부재는 내화 시간보다 오래 타면 무너짐.</li>
-<li>모든 안은 같은 시드로 시험해 다시 만들어도 같은 결과가 나옵니다. 비틀림 · 지반 조건 · 비구조재는 고려하지 않습니다.</li></ul>`;
+<li>Magnitude limit: binary search from M ${M_MIN.toFixed(1)} to ${M_MAX.toFixed(1)} at ${LIMIT_DISTANCE_KM} km in 0.1 steps. Collapse means at least one floor lost or at least 20% of structural members collapsed.</li>
+<li>Earthquake: magnitude and distance give PGA (Joyner &amp; Boore 1981); story shear is distributed by story mass × height (simplified KDS 41 17 00 equivalent static method).</li>
+<li>Fire: ISO 834 standard fire for ${FIRE_MINUTES} min within a 4 m radius at the ground-floor center. Members fail when exposure exceeds their fire rating.</li>
+<li>All alternatives use the same random seed for reproducibility. Torsion, soil conditions and nonstructural members are excluded.</li></ul>`;
 
   const body = [
-    section('비교 요약', summaryTable),
+    section('Comparison summary', summaryTable),
     section(
-      `지진: 버티는 최대 규모 (진앙 ${LIMIT_DISTANCE_KM} km)`,
+      `Earthquake: Magnitude limit (epicentral distance ${LIMIT_DISTANCE_KM} km)`,
       limitChart +
-        `<p class="note">국내 내진설계 기준 지진(0.22 g)은 진앙 10 km에서 약 규모 ${num(
+        `<p class="note">The Korean design reference (0.22 g) corresponds at 10 km to approximately M ${num(
           findDesignMagnitude(),
-        )}에 해당합니다.</p>`,
+        )}.</p>`,
     ),
     section(
-      `기준 지진 (규모 ${REFERENCE_QUAKE.value} · 진앙 ${REFERENCE_QUAKE.distanceKm} km): 층별 피해율`,
+      `Reference quake (M ${REFERENCE_QUAKE.value} · epicentral distance ${REFERENCE_QUAKE.distanceKm} km): Damage by floor`,
       floorTable,
     ),
-    section('기준 지진: 피해 원인', causeChart),
-    section(`1층 화재 ${FIRE_MINUTES}분: 무너진 구조 부재 비율`, fireChart),
-    section('시험 방법과 한계', method),
+    section('Reference earthquake / damage causes', causeChart),
+    section(`Ground-floor fire ${FIRE_MINUTES} min: Structural collapse ratio`, fireChart),
+    section('Test method & limitations', method),
   ].join('');
 
   return page({
-    title: '설계안 비교 리포트',
-    subtitle: `${type} ${spec.floors}층 · ${rows.length}개 안을 같은 조건으로 비교`,
+    title: 'Design comparison',
+    subtitle: `${type} / ${spec.floors} floors · ${rows.length} alternatives compared under matching conditions`,
     meta: [
-      ['건물', `${type} ${spec.floors}층`],
-      ['현재 재료', rows[0].materialText],
-      ['비교 안', `${rows.length}개`],
+      ['Building', `${type} / ${spec.floors} floors`],
+      ['Current materials', rows[0].materialText],
+      ['Alternatives', `${rows.length}`],
     ],
     summary: comparisonFindings(data),
     body,
@@ -331,18 +331,18 @@ export function comparisonCsv({ rows }) {
     ...new Set(rows.flatMap((r) => (r.quake.floorDamage ?? []).map((f) => f.floor))),
   ].sort((a, b) => a - b);
   const header = [
-    '안',
-    '재료',
-    '무게(t)',
-    '버티는 최대 규모',
-    '기준지진 붕괴율',
-    '기준지진 무너진 층',
-    '피해-시나리오',
-    '피해-충돌',
-    '피해-잔해',
-    ...floors.map((f) => `기준지진 ${f}층 피해율`),
-    '화재60분 붕괴율',
-    '화재60분 무너진 층',
+    'Alternative',
+    'Materials',
+    'Mass(t)',
+    'Magnitude limit',
+    'Reference quake collapse ratio',
+    'Reference quake floors lost',
+    'Damage / scenario',
+    'Damage / collision',
+    'Damage / debris',
+    ...floors.map((f) => `Reference quake L${f} damage ratio`),
+    '60 min fire collapse ratio',
+    '60 min fire floors lost',
   ];
   return toCsv([
     header,
