@@ -1,13 +1,6 @@
-/**
- * [C · 화면] ① 건물 형태 선택
- *
- * 🔧 임시 버전(베이스): 형태 버튼 4개 + 다음 버튼. 고르면 3D 화면에 바로 미리보기.
- * TODO(C): 형태 카드 디자인, 썸네일
- */
-
 import { store } from '../../core/state.js';
 import { defaultSpec } from '../../core/types.js';
-import { BUILDING_TYPES } from '../../data/ids.js';
+import { BUILDING_TYPES } from '../english.js';
 import { h } from '../dom.js';
 
 export function renderSelectScreen(root) {
@@ -25,6 +18,11 @@ export function renderSelectScreen(root) {
             'aria-pressed': String(info.id === current),
             onclick: () => store.set({ spec: defaultSpec(info.id) }),
           },
+          h(
+            'div',
+            { class: `building-diagram ${info.id}`, 'aria-hidden': 'true' },
+            ...Array.from({ length: info.id === 'house' ? 2 : 4 }, () => h('i')),
+          ),
           h('strong', {}, info.label),
           h('span', {}, info.description),
         ),
@@ -38,7 +36,7 @@ export function renderSelectScreen(root) {
       'header',
       { class: 'panel-header' },
       h('p', { class: 'step' }, 'STEP 1 / 3'),
-      h('h1', {}, '건물 형태 선택'),
+      h('h1', {}, 'Choose a building'),
     ),
     list,
     h(
@@ -47,7 +45,7 @@ export function renderSelectScreen(root) {
       h(
         'button',
         { class: 'btn primary', onclick: () => store.set({ screen: 'configure' }) },
-        '다음: 세부 설정 →',
+        'Configure building →',
       ),
     ),
   );

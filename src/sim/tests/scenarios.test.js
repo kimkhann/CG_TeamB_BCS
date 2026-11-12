@@ -10,6 +10,33 @@ const run = (sim, seconds) => {
   for (let i = 0; i < seconds * 60; i++) sim.step(1 / 60);
 };
 
+test('explosion applies finite outward impulses after members start falling', () => {
+  const parts = makeBuilding({
+    type: 'house',
+    floors: 2,
+    materials: { frame: 'wood', wall: 'brick', slab: 'wood', facade: 'window' },
+  });
+  const sim = createSimulation(parts, { emit: () => {} });
+  try {
+    const column = parts.find((p) => p.kind === 'column' && p.floor === 1);
+    assert.doesNotThrow(() =>
+      sim.runScenario({
+        type: 'explosion',
+        value: 10,
+        target: { kind: 'part', partId: column.id },
+      }),
+    );
+    const moving = parts.filter((p) => p.state === 'falling' && p.sim.body);
+    assert.ok(moving.length > 0, 'the blast must exercise falling-member impulse code');
+    assert.ok(moving.some((p) => p.sim.body.velocity.length() > 0));
+    assert.ok(moving.every((p) => p.sim.body.velocity.toArray().every(Number.isFinite)));
+    run(sim, 1);
+    assert.ok(parts.every((p) => p.position.every(Number.isFinite)));
+  } finally {
+    sim.dispose();
+  }
+});
+
 test('glass shatters without rigid bodies on support loss and emits a glass effect', () => {
   const glass = createPart({
     id: 'win-a',
@@ -137,13 +164,13 @@ test('lateral bracing: an upper column with no beams or slabs left topples, a gr
 
 test('scenario size: real-world unit conversion', async () => {
   const m = await import('../scenarioScale.js');
-  assert.match(m.describeScenario('impact', 43).headline, /시속 43km/);
+  assert.match(m.describeScenario('impact', 43).headline, /43 km\/h/);
   assert.ok(Math.abs(m.blast(1).radius - 7) < 1e-9, '1 kg TNT → 7 m radius');
   // M 6.0 at 10 km → about 0.22 g (Korean design earthquake level)
   assert.ok(Math.abs(m.pgaFromMagnitude(6, 10) - 0.22) < 0.01);
   assert.ok(m.pgaFromMagnitude(7, 10) > m.pgaFromMagnitude(7, 50), 'weaker with distance');
-  assert.match(m.describeScenario('earthquake', 6, 10).headline, /진도 Ⅶ/);
-  assert.match(m.describeScenario('fire', 30).headline, /30분/);
+  assert.match(m.describeScenario('earthquake', 6, 10).headline, /MMI Ⅶ/);
+  assert.match(m.describeScenario('fire', 30).headline, /30 min/);
   assert.equal(m.mmiFromPga(0.25).level, 'Ⅶ');
   // log-scale slider round trip
   const s = m.SCALES.explosion;

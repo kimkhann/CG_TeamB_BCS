@@ -1,3 +1,4 @@
+import { partLabel } from '../../ui/english.js';
 /**
  * [B · Report] Shared helpers — report HTML shell, SVG charts, CSV
  *
@@ -6,7 +7,7 @@
  */
 
 export const esc = (v) =>
-  String(v ?? '')
+  partLabel(v)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -36,11 +37,11 @@ export const CAUSE_COLORS = {
   support: '#c8372d',
 };
 export const CAUSE_LABELS = {
-  scenario: '시나리오 직접 피해',
-  collision: '떨어진 부재 충돌',
-  debris: '쌓인 잔해 무게',
-  support: '지지 상실(연쇄)',
-  removed: '부재 제거',
+  scenario: 'Direct scenario damage',
+  collision: 'Falling-member collisions',
+  debris: 'Accumulated debris load',
+  support: 'Support loss / cascade',
+  removed: 'Member removal',
 };
 
 /**
@@ -48,9 +49,9 @@ export const CAUSE_LABELS = {
  * @param {{ title:string, subtitle?:string, meta?:[string,string][], summary?:string[], body:string }} o
  */
 export function page({ title, subtitle = '', meta = [], summary = [], body }) {
-  const created = new Date().toLocaleString('ko-KR');
+  const created = new Date().toLocaleString('en-GB');
   return `<!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -58,8 +59,8 @@ export function page({ title, subtitle = '', meta = [], summary = [], body }) {
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #f4f6f8; color: ${COLORS.ink};
-    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+  body { margin: 0; background: #f0eee6; color: ${COLORS.ink};
+    font: 13px/1.6 "Segoe UI", Arial, sans-serif; }
   main { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
   header { border-bottom: 3px solid ${COLORS.ink}; padding-bottom: 14px; margin-bottom: 20px; }
   .kicker { font-size: 12px; letter-spacing: .12em; color: ${COLORS.red}; font-weight: 700; }
@@ -68,43 +69,44 @@ export function page({ title, subtitle = '', meta = [], summary = [], body }) {
   .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px;
     margin: 14px 0 0; font-size: 13px; }
   .meta div { display: flex; gap: 8px; } .meta dt { color: ${COLORS.muted}; min-width: 72px; } .meta dd { margin: 0; font-weight: 600; }
-  section { background: #fff; border: 1px solid ${COLORS.grid}; border-radius: 8px; padding: 18px 20px; margin: 0 0 16px; break-inside: avoid; }
+  section { background: #fff; border: 1px solid ${COLORS.grid}; border-radius: 0; padding: 18px 20px; margin: 0 0 16px; break-inside: avoid; }
   h2 { font-size: 17px; margin: 0 0 10px; }
   h3 { font-size: 14px; margin: 14px 0 6px; color: ${COLORS.muted}; }
-  .summary { background: #fff8f3; border-color: #f3d9c6; }
+  .summary { background: #e7ece1; border-color: #b7c4ae; }
   .summary li { margin: 4px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid ${COLORS.grid}; vertical-align: top; }
   th { background: #f4f6f8; font-weight: 600; } td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-size: 12px; font-weight: 600; }
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .kpi { border: 1px solid ${COLORS.grid}; border-radius: 6px; padding: 10px 12px; }
+  .kpi { border: 1px solid ${COLORS.grid}; border-radius: 0; padding: 10px 12px; }
   .kpi b { display: block; font-size: 22px; } .kpi span { color: ${COLORS.muted}; font-size: 12px; }
   .note { color: ${COLORS.muted}; font-size: 12px; }
   svg { max-width: 100%; height: auto; display: block; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: ${COLORS.muted}; margin-top: 6px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   footer { color: ${COLORS.muted}; font-size: 12px; margin-top: 24px; }
+  @page { size: A4; margin: 15mm; }
+  @media (max-width: 640px) { th, td { padding: 4px; font-size: 10px; } section { padding: 12px; } }
   @media print {
     body { background: #fff; } main { padding: 0; max-width: none; }
-    section { border-color: #ccc; } .noprint { display: none; }
+    section { border-color: #ccc; } h2 { break-after: avoid; } tr { break-inside: avoid; } thead { display: table-header-group; } .noprint { display: none; }
   }
 </style>
 </head>
 <body>
 <main>
 <header>
-  <div class="kicker">COLLAPSE LAB · 건물 붕괴 시뮬레이션 보고서</div>
+  <div class="kicker">COLLAPSE LAB · STRUCTURAL RESPONSE REPORT</div>
   <h1>${esc(title)}</h1>
   <p class="subtitle">${esc(subtitle)}</p>
-  <dl class="meta">${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}<div><dt>작성</dt><dd>${esc(created)}</dd></div></dl>
+  <dl class="meta">${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}<div><dt>Generated</dt><dd>${esc(created)}</dd></div></dl>
 </header>
-${summary.length ? `<section class="summary"><h2>핵심 요약</h2><ul>${summary.map((s) => `<li>${s}</li>`).join('')}</ul></section>` : ''}
+${summary.length ? `<section class="summary"><h2>Findings</h2><ul>${summary.map((s) => `<li>${s}</li>`).join('')}</ul></section>` : ''}
 ${body}
 <footer>
-  이 보고서는 교육용 단순화 모델(Collapse Lab)의 결과입니다. 실제 건물의 안전성 판정이나 설계 · 철거 결정에는
-  구조기술사의 검토와 인증된 구조 해석이 필요합니다.
-  <span class="noprint"> · 인쇄(Ctrl/⌘ + P) → "PDF로 저장"으로 PDF를 만들 수 있습니다.</span>
+  This report uses the simplified educational model in Collapse Lab. Real safety assessments, design and demolition decisions require a qualified structural engineer and validated structural analysis.
+  <span class="noprint"> · Print (Ctrl/⌘ + P) → Save as PDF to export this report.</span>
 </footer>
 </main>
 </body>
@@ -165,7 +167,7 @@ export function stackedBars(rows, colors, labels, { width = 640 } = {}) {
     const y = i * rowH + 4;
     const sum = r.parts.reduce((s, p) => s + p.value, 0);
     if (sum <= 0) {
-      return `<text x="${labelW - 8}" y="${y + 17}" text-anchor="end" font-size="12" fill="${COLORS.ink}">${esc(r.label)}</text><text x="${labelW + 4}" y="${y + 17}" font-size="12" fill="${COLORS.muted}">피해 없음</text>`;
+      return `<text x="${labelW - 8}" y="${y + 17}" text-anchor="end" font-size="12" fill="${COLORS.ink}">${esc(r.label)}</text><text x="${labelW + 4}" y="${y + 17}" font-size="12" fill="${COLORS.muted}">No damage</text>`;
     }
     const total = sum;
     let x = labelW;
@@ -255,10 +257,10 @@ export function planMap(shapes, { width = 640 } = {}) {
   return `<svg viewBox="0 0 ${width} ${height.toFixed(0)}" role="img">${rects.join('')}</svg>`;
 }
 
-/** CSV (with a BOM so Korean text displays correctly in Excel) */
+/** CSV (with a UTF-8 BOM for Excel) */
 export function toCsv(rows) {
   const cell = (v) => {
-    const s = String(v ?? '');
+    const s = partLabel(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return '﻿' + rows.map((r) => r.map(cell).join(',')).join('\n');

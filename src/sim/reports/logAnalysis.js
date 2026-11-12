@@ -9,7 +9,7 @@
  *   - per-floor damage, the order floors collapsed, the collapse curve over time and the peak collapse rate
  */
 
-import { BUILDING_TYPES, MATERIALS, SCENARIOS } from '../../data/ids.js';
+import { BUILDING_TYPES, MATERIALS, SCENARIOS } from '../../ui/english.js';
 import { describeScenario, scenarioValue } from '../scenarioScale.js';
 import {
   CAUSE_COLORS,
@@ -29,13 +29,13 @@ import {
 } from './reportHtml.js';
 
 const KIND_LABELS = {
-  column: '기둥',
-  beam: '보',
-  slab: '바닥판',
-  roof: '지붕',
-  wall: '벽',
-  window: '유리',
-  fragment: '조각',
+  column: 'column',
+  beam: 'beam',
+  slab: 'slab',
+  roof: 'roof',
+  wall: 'wall',
+  window: 'glass',
+  fragment: 'fragment',
 };
 
 const isStructural = (p) => p && p.structural && p.kind !== 'fragment';
@@ -161,62 +161,62 @@ export function analyzeLog({ history, results, parts, spec }) {
   };
 }
 
-/** Human-readable conclusions from the analysis (Korean, shown in the report) */
+/** Human-readable conclusions from the analysis (English, shown in the report) */
 function findings(a) {
   const out = [];
   const r = a.results;
-  if (!a.scenarios.length) return ['아직 실행한 시나리오가 없습니다.'];
+  if (!a.scenarios.length) return ['No scenario has been run yet.'];
   if (!r.finished) {
     out.push(
-      '<b>시뮬레이션이 아직 진행 중일 때 만든 보고서입니다.</b> 모든 움직임이 멈춘 뒤 다시 만들면 최종 결과가 반영됩니다.',
+      '<b>This report was generated while the simulation was running.</b> Generate it again after all motion settles for final results.',
     );
   }
   if (r.collapsedParts === 0) {
     out.push(
-      `구조 부재는 하나도 무너지지 않았습니다${a.timeline.firstDamage ? ' (일부 손상만 발생)' : ''}.`,
+      `No structural members collapsed${a.timeline.firstDamage ? ' (some damage occurred)' : ''}.`,
     );
   } else {
     out.push(
-      `구조 부재 <b>${r.totalParts}개 중 ${r.collapsedParts}개(${pct(r.collapsedRatio)})</b>가 무너졌고, 무너진 층은 <b>${r.floorsLost}개</b>입니다.`,
+      `<b>${r.collapsedParts} of ${r.totalParts} structural members (${pct(r.collapsedRatio)})</b> collapsed; <b>${r.floorsLost} floors</b> were lost.`,
     );
   }
   if (a.direct > 0 && a.cascade > 0) {
     out.push(
-      `직접 부서진 구조 부재 ${a.direct}개가 <b>연쇄로 ${a.cascade}개</b>를 더 무너뜨렸습니다 (연쇄 배율 <b>${num(a.cascadeRatio)}배</b>) — ${
+      `${a.direct} direct structural failures triggered <b>${a.cascade} secondary collapses</b> (cascade ratio <b>${num(a.cascadeRatio)}×</b>) — ${
         a.cascadeRatio >= 3
-          ? '하중 경로가 끊기며 피해가 크게 번지는 연쇄 붕괴(progressive collapse) 양상입니다.'
-          : '피해가 주로 직접 맞은 부분에 머물렀습니다.'
+          ? 'progressive collapse spread damage through interrupted load paths.'
+          : 'damage remained mainly near the directly affected members.'
       }`,
     );
   }
   const top = a.topTriggers[0];
   if (top?.part && top.count >= 3) {
     out.push(
-      `연쇄를 가장 크게 일으킨 부재는 <b>${esc(top.part.label)}</b>입니다 — 부서진 직후 ${top.count}개 부재가 지지를 잃었습니다. 보강 우선 대상입니다.`,
+      `<b>${esc(top.part.label)}</b> triggered the largest cascade: ${top.count} members lost support immediately after its failure. Consider it a reinforcement priority.`,
     );
   }
   const c = r.damageByCause ?? {};
   const secondary = (c.collision ?? 0) + (c.debris ?? 0);
   if (secondary > 0.05) {
     out.push(
-      `깎인 체력의 <b>${pct(secondary)}</b>는 시나리오가 아니라 <b>떨어진 부재의 충돌과 쌓인 잔해 무게</b>에서 나왔습니다 (2차 피해).`,
+      `<b>${pct(secondary)}</b> of health loss came from <b>falling-member collisions and accumulated debris weight</b> (secondary damage).`,
     );
   }
   if (a.floorLost.length) {
     out.push(
-      `층이 무너진 순서: ${a.floorLost.map((f) => `${f.floor}층(${num(f.t)}초)`).join(' → ')}${
-        a.floorLost[0].floor === 1 ? ' — 1층이 먼저 무너지는 연약층 붕괴입니다.' : ''
+      `Floor collapse order: ${a.floorLost.map((f) => `L${f.floor} (${num(f.t)} s)`).join(' → ')}${
+        a.floorLost[0].floor === 1 ? ' — ground-floor-first soft-story collapse.' : ''
       }`,
     );
   }
   if (a.peakRate > 0) {
     out.push(
-      `붕괴는 ${num(a.timeline.firstStructuralFail?.t)}초에 시작해 ${num(a.timeline.lastCollapse?.t)}초까지 이어졌고, ${num(a.peakAt)}초 무렵 <b>초당 ${num(a.peakRate, 0)}개</b>로 가장 빨랐습니다.`,
+      `Collapse began at ${num(a.timeline.firstStructuralFail?.t)} s and continued to ${num(a.timeline.lastCollapse?.t)} s, peaking near ${num(a.peakAt)} s at <b>${num(a.peakRate, 0)} members/s</b>.`,
     );
   }
   if (a.glass.total) {
     out.push(
-      `유리 ${a.glass.total}장 중 ${a.glass.broken}장(${pct(a.glass.broken / a.glass.total)})이 깨졌습니다.`,
+      `${a.glass.broken} of ${a.glass.total} glass panels (${pct(a.glass.broken / a.glass.total)}) shattered.`,
     );
   }
   return out;
@@ -232,26 +232,26 @@ export function renderLogReport(a) {
   const causeText = (k) => CAUSE_LABELS[k] ?? k;
 
   const timeline = table(
-    ['시각(초)', '사건', '부재 · 내용'],
+    ['Time (s)', 'Event', 'Member / details'],
     [
-      ...a.scenarios.map((s) => [num(s.t), '시나리오 실행', esc(s.text)]),
+      ...a.scenarios.map((s) => [num(s.t), 'Scenario run', esc(s.text)]),
       a.timeline.firstDamage && [
         num(a.timeline.firstDamage.t),
-        '첫 손상',
+        'First damage',
         label(a.timeline.firstDamage.part),
       ],
       a.timeline.firstStructuralFail && [
         num(a.timeline.firstStructuralFail.t),
-        '첫 구조 부재 붕괴',
+        'First structural collapse',
         `${label(a.timeline.firstStructuralFail.part)} (${causeText(a.timeline.firstStructuralFail.cause)})`,
       ],
-      ...a.floorLost.map((f) => [num(f.t), '층 붕괴', `${f.floor}층 바닥판 모두 무너짐`]),
+      ...a.floorLost.map((f) => [num(f.t), 'Floor collapse', `L${f.floor} all slabs collapsed`]),
       a.timeline.lastCollapse && [
         num(a.timeline.lastCollapse.t),
-        '마지막 붕괴',
+        'Last collapse',
         label(a.timeline.lastCollapse.part),
       ],
-      [num(a.timeline.end), r.finished ? '모든 움직임 정지' : '기록 시점 (진행 중)', ''],
+      [num(a.timeline.end), r.finished ? 'All motion settled' : 'Recorded while running', ''],
     ]
       .filter(Boolean)
       .sort((x, y) => Number(x[0]) - Number(y[0])),
@@ -262,34 +262,34 @@ export function renderLogReport(a) {
     ? lineChart(
         [
           {
-            name: '무너진 구조 부재',
+            name: 'Collapsed structural members',
             color: COLORS.red,
             points: a.samples.map((s) => [s.t, s.collapsed]),
           },
           {
-            name: '손상된 구조 부재',
+            name: 'Damaged structural members',
             color: COLORS.orange,
             points: a.samples.map((s) => [s.t, s.damaged]),
           },
           {
-            name: '떨어지는 중',
+            name: 'Falling',
             color: COLORS.blue,
             points: a.samples.map((s) => [s.t, s.falling]),
           },
         ],
-        { xLabel: '시나리오 시작 후 시간 (초)', yLabel: '부재 수' },
+        { xLabel: 'Time since scenario start (s)', yLabel: 'Member count' },
       )
-    : '<p class="note">표본이 없습니다.</p>';
+    : '<p class="note">No samples recorded.</p>';
 
   const c = r.damageByCause ?? { scenario: 0, collision: 0, debris: 0 };
   const causeChart = stackedBars(
     [
       {
-        label: '깎인 체력 (원인별)',
+        label: 'Health loss by cause',
         parts: ['scenario', 'collision', 'debris'].map((k) => ({ key: k, value: c[k] ?? 0 })),
       },
       {
-        label: '무너진 구조 부재 수',
+        label: 'Collapsed structural members',
         parts: [
           { key: 'scenario', value: a.directByCause.scenario + (a.directByCause.removed ?? 0) },
           { key: 'collision', value: a.directByCause.collision },
@@ -304,7 +304,7 @@ export function renderLogReport(a) {
 
   const floorChart = barChart(
     (r.floorDamage ?? []).map((f) => ({
-      label: `${f.floor}층`,
+      label: `L${f.floor}`,
       value: f.ratio * 100,
       color: f.ratio >= 0.5 ? COLORS.red : f.ratio >= 0.15 ? COLORS.orange : COLORS.green,
       text: pct(f.ratio),
@@ -326,45 +326,50 @@ export function renderLogReport(a) {
 
   const body = [
     section(
-      '결과 한눈에',
+      'Results at a glance',
       kpis([
-        [pct(r.collapsedRatio), '무너진 구조 부재 비율'],
-        [`${r.floorsLost}개 층`, '완전히 무너진 층'],
-        [r.collapseTime === null ? '-' : `${num(r.collapseTime)}초`, '붕괴 진행 시간'],
-        [a.direct ? `${num(a.cascadeRatio)}배` : '-', '연쇄 배율'],
+        [pct(r.collapsedRatio), 'Structural collapse ratio'],
+        [`${r.floorsLost} floors`, 'Fully collapsed floors'],
+        [r.collapseTime === null ? '-' : `${num(r.collapseTime)} s`, 'Collapse duration'],
+        [a.direct ? `${num(a.cascadeRatio)}×` : '-', 'Cascade ratio'],
       ]),
     ),
-    section('진행 시간표', timeline),
-    section('시간에 따른 붕괴', curve),
+    section('Event timeline', timeline),
+    section('Collapse over time', curve),
     section(
-      '붕괴 원인',
-      `${causeChart}<p class="note">위: 부재들이 잃은 체력을 원인별로 합한 비율 · 아래: 무너진 구조 부재를 마지막 원인별로 센 수 (지지 상실 = 받쳐 주던 부재가 무너져 함께 떨어진 연쇄 붕괴)</p>`,
+      'Damage causes',
+      `${causeChart}<p class="note">Top: health loss by cause. Bottom: collapsed structural members by final cause. Support loss means progressive collapse following a supporting member failure.</p>`,
     ),
     triggerRows.length
       ? section(
-          '연쇄를 일으킨 부재',
-          table(['순위', '부재', '재료', '직후 지지를 잃은 부재 수'], triggerRows, [0, 3]) +
-            '<p class="note">이 부재가 부서진 바로 그 순간 지지를 잃고 떨어진 부재 수입니다. 많을수록 하중 경로의 핵심입니다.</p>',
+          'Cascade triggers',
+          table(
+            ['Rank', 'Member', 'Materials', 'Members losing support immediately'],
+            triggerRows,
+            [0, 3],
+          ) +
+            '<p class="note">Members that lost support immediately after this member failed. Higher counts indicate a more important load path.</p>',
         )
       : '',
     section(
-      '층별 피해율',
-      floorChart + '<p class="note">그 층 구조 부재의 평균 체력 손실 (무너진 부재는 100%)</p>',
+      'Damage by floor',
+      floorChart +
+        '<p class="note">Average health loss of structural members on each floor (collapsed members count as 100%).</p>',
     ),
     section(
-      '부재 종류별',
-      table(['종류', '전체', '손상', '붕괴', '붕괴율'], kindRows, [1, 2, 3, 4]),
+      'Member breakdown',
+      table(['Kind', 'Total', 'Damaged', 'Collapsed', 'Collapse ratio'], kindRows, [1, 2, 3, 4]),
     ),
   ].join('');
 
   return page({
-    title: '시뮬레이션 로그 분석',
-    subtitle: `${type} ${spec.floors}층 · ${a.scenarios.map((s) => s.text).join(' / ') || '시나리오 없음'}`,
+    title: 'Simulation log analysis',
+    subtitle: `${type} / ${spec.floors} floors · ${a.scenarios.map((s) => s.text).join(' / ') || 'No scenario'}`,
     meta: [
-      ['건물', `${type} ${spec.floors}층`],
-      ['재료', mats],
-      ['기록 시간', `${num(r.time)}초`],
-      ['이벤트 수', `${a.events.length}개`],
+      ['Building', `${type} / ${spec.floors} floors`],
+      ['Materials', mats],
+      ['Recorded time', `${num(r.time)} s`],
+      ['Events', `${a.events.length}`],
     ],
     summary: findings(a),
     body,
@@ -374,15 +379,25 @@ export function renderLogReport(a) {
 /** Raw data: the full event history */
 export function logCsv(a) {
   const rows = [
-    ['시각(초)', '사건', '부재 ID', '부재', '종류', '층', '재료', '원인', '연쇄를 일으킨 부재'],
+    [
+      'Time (s)',
+      'Event',
+      'Member ID',
+      'Member',
+      'Kind',
+      'Level',
+      'Materials',
+      'Cause',
+      'Cascade triggers',
+    ],
   ];
   const t0 = a.scenarios.length ? a.events.find((e) => e.type === 'scenario').t : 0;
   const typeLabel = {
-    scenario: '시나리오',
-    damaged: '첫 손상',
-    failed: '파괴',
-    detached: '지지 상실 낙하',
-    shattered: '유리 깨짐',
+    scenario: 'Scenario',
+    damaged: 'First damage',
+    failed: 'Failed',
+    detached: 'Falling / support loss',
+    shattered: 'Glass shattered',
   };
   for (const e of a.events) {
     const p = a.byId.get(e.partId);

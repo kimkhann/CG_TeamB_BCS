@@ -14,21 +14,21 @@ import { keyMembersCsv, renderKeyMembersReport, runKeyMembers } from './keyMembe
 export const REPORTS = {
   log: {
     id: 'log',
-    label: '① 이번 시뮬레이션 로그 분석',
+    label: '01 / Simulation log analysis',
     description:
-      '지금 화면의 시뮬레이션 기록으로 진행 시간표 · 붕괴 원인 · 연쇄를 일으킨 부재를 분석합니다.',
+      'Analyze the current run: timeline, damage causes and members that triggered progressive collapse.',
   },
   compare: {
     id: 'compare',
-    label: '② 설계안 비교 리포트',
+    label: '02 / Design comparison',
     description:
-      '현재 건물과 재료 · 구조 대안을 같은 지진(최대 규모 탐색 · 규모 6.5) · 60분 화재로 시험해 비교합니다. 1~3분 걸립니다.',
+      'Compare this design and alternatives under matching earthquakes and a 60-minute fire. Allow 1–3 minutes.',
   },
   keymembers: {
     id: 'keymembers',
-    label: '③ 핵심 부재 지도',
+    label: '03 / Key member map',
     description:
-      '고른 층의 기둥 · 벽을 하나씩 없애 보고, 없애면 안 되는 부재를 평면도에 표시합니다.',
+      'Remove columns and walls one at a time on the chosen level to map critical members.',
     needsFloor: true,
   },
 };
@@ -48,7 +48,7 @@ const stamp = () => {
 export async function buildReport(type, { spec, sim, parts, floor = 1, onProgress }) {
   const baseName = `collapse-lab_${spec.type}${spec.floors}F_${type}_${stamp()}`;
   if (type === 'log') {
-    if (!sim) throw new Error('시뮬레이션이 없습니다.');
+    if (!sim) throw new Error('No simulation is available.');
     const analysis = analyzeLog({
       history: sim.getHistory(),
       results: sim.getResults(),
@@ -56,7 +56,7 @@ export async function buildReport(type, { spec, sim, parts, floor = 1, onProgres
       spec,
     });
     return {
-      title: '시뮬레이션 로그 분석',
+      title: 'Simulation log analysis',
       html: renderLogReport(analysis),
       csv: logCsv(analysis),
       baseName,
@@ -65,7 +65,7 @@ export async function buildReport(type, { spec, sim, parts, floor = 1, onProgres
   if (type === 'compare') {
     const data = await runDesignComparison(spec, onProgress);
     return {
-      title: '설계안 비교 리포트',
+      title: 'Design comparison',
       html: renderComparisonReport(data),
       csv: comparisonCsv(data),
       baseName,
@@ -74,13 +74,13 @@ export async function buildReport(type, { spec, sim, parts, floor = 1, onProgres
   if (type === 'keymembers') {
     const data = await runKeyMembers(spec, floor, onProgress);
     return {
-      title: `핵심 부재 지도 (${floor}층)`,
+      title: `Key member map (L${floor})`,
       html: renderKeyMembersReport(data),
       csv: keyMembersCsv(data),
       baseName: baseName.replace('keymembers', `keymembers-${floor}F`),
     };
   }
-  throw new Error(`알 수 없는 보고서: ${type}`);
+  throw new Error(`Unknown report: ${type}`);
 }
 
 /**

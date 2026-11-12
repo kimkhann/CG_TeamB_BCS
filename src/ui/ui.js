@@ -1,15 +1,5 @@
-/**
- * [C · 화면] 공개 함수: mountUI(root, { renderer, getParts }) → { update(dt) }
- *
- * 왼쪽 패널에 현재 화면(형태 선택 → 세부 설정 → 시뮬레이션)을 그리고,
- * 3D 화면의 마우스 조작(카메라, 부재 · 위치 선택), 보기 설정(외벽 숨기기 · 단면 보기),
- * 대상 표시, 단축키를 연결합니다.
- *
- * 규칙: renderer 는 공개 함수만 사용합니다. getParts() 는 읽기 전용입니다.
- *
- * 🔧 임시 버전(베이스): 기능 위주의 단순한 화면.
- * TODO(C): 화면 디자인, 형태 카드 미리보기, 결과 화면, 재료 비교
- */
+import { h } from './dom.js';
+import { showWelcome } from './screens/welcomeScreen.js';
 
 import { store } from '../core/state.js';
 import { emit, EVENTS } from '../core/events.js';
@@ -27,10 +17,6 @@ const SCREENS = {
 
 const isStanding = (p) => p.state === 'intact' || p.state === 'damaged';
 
-/**
- * 보기 설정에 맞는 부재 필터. 떨어지는 부재와 잔해는 항상 보입니다.
- * @param {import('../core/state.js').AppState} state
- */
 function makePartFilter({ hideFacade, cutFloor, screen }) {
   const cut = screen === 'simulate' ? cutFloor : null;
   if (!hideFacade && !cut) return null;
@@ -39,7 +25,7 @@ function makePartFilter({ hideFacade, cutFloor, screen }) {
     if (hideFacade && (p.kind === 'wall' || p.kind === 'window')) return false;
     if (cut) {
       if (p.floor > cut) return false;
-      // 단면 층의 천장(바닥판)도 숨겨 내부가 보이게 함
+
       if (p.floor === cut && (p.kind === 'slab' || p.kind === 'roof')) return false;
     }
     return true;
@@ -54,13 +40,34 @@ export function mountUI(root, ctx) {
   const { renderer } = ctx;
   const cameraRig = createCameraRig(renderer);
   attachPicking(renderer, ctx);
+  new ResizeObserver(() => cameraRig.frameBuilding()).observe(renderer.domElement.parentElement);
 
-  /** 현재 화면이 돌려준 정리 함수 / 갱신 함수 */
   let current = { cleanup: () => {}, refresh: () => {} };
 
   function showScreen(screen) {
     current.cleanup?.();
     root.innerHTML = '';
+    root.dataset.screen = screen;
+    document.body.dataset.screen = screen;
+    root.append(
+      h(
+        'div',
+        { class: 'brand-bar' },
+        h(
+          'button',
+          {
+            class: 'brand',
+            onclick: () => {
+              store.set({ screen: 'select' });
+              showWelcome(() => showScreen('select'));
+            },
+            'aria-label': 'Open title screen',
+          },
+          'CL',
+          h('span', {}, 'COLLAPSE LAB'),
+        ),
+      ),
+    );
     current = SCREENS[screen](root, ctx) ?? {};
   }
 
@@ -86,7 +93,6 @@ export function mountUI(root, ctx) {
     }
   });
 
-  // 단축키: Space 일시정지 · 재개, R 초기화 (입력 칸에 커서가 있을 때는 무시)
   window.addEventListener('keydown', (event) => {
     if (store.get().screen !== 'simulate') return;
     if (/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement?.tagName ?? '')) return;
@@ -100,6 +106,12 @@ export function mountUI(root, ctx) {
   showScreen(store.get().screen);
   cameraRig.setAutoRotate(store.get().screen !== 'simulate');
   applyView(store.get());
+  document.documentElement.lang = 'en';
+  document.title = 'Collapse Lab / Building Collapse Simulator';
+  root.setAttribute('aria-label', 'Experiment controls');
+  renderer.domElement.parentElement.setAttribute('aria-label', 'Interactive 3D building preview');
+  if (!new URLSearchParams(location.search).has('screen'))
+    showWelcome(() => showScreen(store.get().screen));
 
   return {
     update(dt) {
