@@ -146,7 +146,7 @@ Formulas, sources and measurements: `src/sim/B_NOTES.md`.
 
 - **C**: the size sliders and the report panel were added to `ui/screens/simulateScreen.js` and `styles/ui.css` functionally — restyle them freely. Ranges and texts come from `sim/scenarioScale.js`; reports from `sim/reports/index.js` (`REPORTS`, `buildReport`, `downloadText`, `openHtml`). Please also show the three new result fields on the results screen. During an earthquake, standing parts' `position` changes every step
 - **A**: draw glass shards for `IMPACT kind:'glass'` (dust for now) and consider camera shake during an earthquake (8 s after `SCENARIO_RUN` with `type:'earthquake'`)
-- User-facing text (UI, reports) is Korean; code, comments, docs, commits and PRs are English
+- Everything is in English: UI, reports, code, comments, docs, commits and PRs (C switched the UI and reports to English in stage C)
 
 ### Known issues / not done
 
@@ -159,3 +159,12 @@ Formulas, sources and measurements: `src/sim/B_NOTES.md`.
 | Piloti 5F earthquake: sway → glass breaks · ground-floor columns damaged → columns fail |
 | --------------------------------------------------------------------------------------- |
 | ![](handoff/stage2b-earthquake.png)                                                     |
+
+---
+
+## Final polish (Thu 11/12)
+
+- **Reports**: generate once, then export as HTML, CSV or PDF from the same result (no re-run per format). Whole-building reports no longer ask for an analysis level; only the key member map does
+- **README**: progress, checklist and features updated to the merged state
+- **Docs**: language notes aligned with the English UI and reports
+- **Formatting**: Prettier check passes for the whole project

@@ -213,7 +213,7 @@ The 0–1 intensity slider is replaced by a **real-world value with its own unit
 
 ## B-9. Three reports
 
-Choose one in the **보고서 (Reports)** panel at the bottom of the simulation screen, build it and download it. Everything is computed in the browser — no server or database.
+Choose one in the **Analysis reports** panel of the simulation screen, generate it once, then export it as HTML, CSV or PDF. Everything is computed in the browser — no server or database.
 
 | Report                          | What it does                                                                                                                                                                                                                                | Time (5 floors) |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
@@ -221,12 +221,12 @@ Choose one in the **보고서 (Reports)** panel at the bottom of the simulation 
 | ② Design alternative comparison | Current building + automatic alternatives (other material sets, ground-floor walls for a piloti) under the same tests: max magnitude withstood (10 km, binary search), per-floor and per-cause damage at M 6.5, 60-minute ground-floor fire | ~1–2 min        |
 | ③ Key member map                | Removes each column and wall of the chosen floor one at a time; grades by progressive collapse (alternate path method, GSA 15%) and seismic contribution; draws the grades on a floor plan                                                  | ~1 min          |
 
-- Output: a self-contained `.html` report (charts and plan included, print → PDF) + raw `.csv` (with a BOM so Korean text opens correctly in Excel)
+- Output: a self-contained `.html` report (charts and plan included, print → PDF) + raw `.csv` (UTF-8 with a BOM so Excel reads it correctly)
 - Headless: `node scripts/make-report.mjs <log|compare|keymembers> [type] [floors] [floor]`
 - Simulation additions: `sim.getHistory()` (event history and 0.5 s samples), `sim.removeParts(ids)`; each `detached` event records the parts that failed just before it as `trigger`
 - Report simulations use a fixed seed, so the same conditions give the same result
 - The on-screen simulation pauses while a report is computed
-- Report text and UI strings stay in Korean (user-facing); code, comments and docs are in English
+- UI and report text are English (switched by C in stage C); code, comments and docs are English too
 
 ### What the results show (examples)
 
