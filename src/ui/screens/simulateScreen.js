@@ -463,7 +463,6 @@ export function renderSimulateScreen(root, ctx) {
   function reportSection() {
     let reportType = '';
     let reportFloor = '';
-    let format = '';
     let report = null;
     let busy = false;
     const placeholder = (text) => h('option', { value: '', selected: true, disabled: true }, text);
@@ -473,15 +472,16 @@ export function renderSimulateScreen(root, ctx) {
         'aria-label': 'Report type',
         onchange: (e) => {
           reportType = e.target.value;
-          reportFloor = '';
-          format = '';
+          const needsFloor = Boolean(REPORTS[reportType]?.needsFloor);
+          // Only the key member map analyses one level; the other reports cover the whole building.
+          reportFloor = needsFloor ? '' : 'building';
           floorSelect.replaceChildren(
             placeholder('Select analysis level'),
-            ...(REPORTS[reportType].needsFloor
+            ...(needsFloor
               ? Array.from({ length: floors }, (_, i) =>
                   h('option', { value: i + 1 }, `Level ${i + 1} columns & walls`),
                 )
-              : [h('option', { value: 'building' }, 'Whole building')]),
+              : []),
           );
           floorSelect.value = '';
           invalidate();
@@ -496,27 +496,12 @@ export function renderSimulateScreen(root, ctx) {
         'aria-label': 'Analysis level',
         onchange: (e) => {
           reportFloor = e.target.value;
-          format = '';
           invalidate();
         },
       },
       placeholder('Select analysis level'),
     );
-    const formatButtons = ['html', 'csv', 'pdf'].map((value) =>
-      h('button', {
-        type: 'button',
-        class: 'btn report-format-button',
-        'data-format': value,
-        'aria-pressed': 'false',
-        onclick: () => {
-          format = value;
-          invalidate();
-        },
-      }, value.toUpperCase()),
-    );
     const floorField = h('label', { class: 'field' }, h('span', {}, 'Analysis level'), floorSelect);
-    const formatField = h('div', { class: 'field' }, h('span', {}, 'File format'),
-      h('div', { class: 'report-format-buttons', role: 'group', 'aria-label': 'Report format' }, formatButtons));
     const description = h('p', { class: 'hint' });
     const status = h('p', { class: 'hint report-status', role: 'status', 'aria-live': 'polite' });
     const progress = h('progress', {
@@ -526,8 +511,19 @@ export function renderSimulateScreen(root, ctx) {
       'aria-label': 'Report analysis progress',
     });
     const makeButton = h('button', { class: 'btn primary', onclick: make }, 'Generate report');
-    const outputButton = h('button', { class: 'btn', onclick: () => deliver() });
-    const downloads = h('div', { class: 'row report-downloads' }, outputButton);
+    // One analysis, every format: the files are exported from the same generated report.
+    const htmlButton = h(
+      'button',
+      { class: 'btn', onclick: () => save(`${report.baseName}.html`, report.html, 'text/html') },
+      'Download HTML',
+    );
+    const csvButton = h(
+      'button',
+      { class: 'btn', onclick: () => save(`${report.baseName}.csv`, report.csv, 'text/csv') },
+      'Download CSV',
+    );
+    const pdfButton = h('button', { class: 'btn', onclick: () => printPdf() }, 'Open / Print PDF');
+    const downloads = h('div', { class: 'row report-downloads' }, htmlButton, csvButton, pdfButton);
 
     function invalidate() {
       report = null;
@@ -535,63 +531,34 @@ export function renderSimulateScreen(root, ctx) {
       update();
     }
     function update() {
-      description.textContent = REPORTS[reportType]?.description ?? '';
+      const info = REPORTS[reportType];
+      description.textContent = info?.description ?? '';
       description.hidden = !reportType;
-      floorField.hidden = !reportType;
-      formatField.hidden = !reportType || !reportFloor;
-      makeButton.hidden = !reportType || !reportFloor || !format;
+      floorField.hidden = !info?.needsFloor;
+      makeButton.hidden = !reportType || !reportFloor;
       makeButton.disabled = busy;
       typeSelect.disabled = busy;
       floorSelect.disabled = busy;
-      formatButtons.forEach((button) => {
-        const selected = button.dataset.format === format;
-        button.disabled = busy;
-        button.classList.toggle('is-selected', selected);
-        button.setAttribute('aria-pressed', String(selected));
-      });
       makeButton.textContent = busy ? 'Analyzing…' : 'Generate report';
       downloads.hidden = !report || busy;
-      outputButton.disabled = !report || busy;
-      outputButton.textContent =
-        format === 'pdf' ? 'Open / Print PDF' : `Download ${format.toUpperCase()}`;
       progress.hidden = !busy;
     }
-    async function deliver(pdfWindow = null) {
+    async function save(name, text, mime) {
       if (!report) return;
-      if (format === 'pdf') {
-        if (pdfWindow && !pdfWindow.closed) {
-          pdfWindow.document.open();
-          pdfWindow.document.write(report.html);
-          pdfWindow.document.close();
-          pdfWindow.opener = null;
-        } else if (canOpenWindow()) openHtml(report.html);
-        else await downloadText(`${report.baseName}.html`, report.html, 'text/html');
-      } else {
-        const result = await downloadText(
-          `${report.baseName}.${format}`,
-          report[format],
-          format === 'html' ? 'text/html' : 'text/csv',
-        );
-        if (result === 'failed')
-          status.textContent = 'Downloads are unavailable in this environment.';
-        else if (result === 'declined') status.textContent = 'Download cancelled.';
-      }
+      const result = await downloadText(name, text, mime);
+      if (result === 'failed')
+        status.textContent = 'Downloads are unavailable in this environment.';
+      else if (result === 'declined') status.textContent = 'Download cancelled.';
+    }
+    async function printPdf() {
+      if (!report) return;
+      // Opened directly from the click, so pop-up blockers allow it. Inside an artifact a new
+      // window is blocked; the HTML file is saved instead and can be printed from there.
+      if (canOpenWindow()) openHtml(report.html);
+      else await save(`${report.baseName}.html`, report.html, 'text/html');
     }
     async function make() {
-      if (busy || !reportType || !reportFloor || !format) return;
-      // Reserve the PDF window during the click, before the asynchronous analysis.
-      const pdfWindow =
-        format === 'pdf' && canOpenWindow() ? window.open('about:blank', '_blank') : null;
-      if (format === 'pdf' && canOpenWindow() && !pdfWindow) {
-        status.textContent = 'Allow pop-ups to open the PDF print view.';
-        return;
-      }
-      if (pdfWindow) {
-        pdfWindow.document.write(
-          '<!doctype html><title>Generating report</title><p>Generating report…</p>',
-        );
-        pdfWindow.document.close();
-      }
+      if (busy || !reportType || !reportFloor) return;
       busy = true;
       report = null;
       const wasPaused = store.get().paused;
@@ -611,11 +578,9 @@ export function renderSimulateScreen(root, ctx) {
           },
         });
         report.html = presentReport(report.html, reportType);
-        status.textContent = `Ready: ${report.title}`;
-        await deliver(pdfWindow);
+        status.textContent = `Ready: ${report.title} — choose a file format below.`;
       } catch (error) {
         console.error(error);
-        pdfWindow?.close();
         status.textContent = `Failed: ${error.message}`;
       } finally {
         busy = false;
@@ -630,7 +595,6 @@ export function renderSimulateScreen(root, ctx) {
       h('h2', {}, 'Analysis reports'),
       h('label', { class: 'field' }, h('span', {}, 'Type'), typeSelect),
       floorField,
-      formatField,
       description,
       makeButton,
       progress,

@@ -178,34 +178,34 @@ test('live controls, result fields, baseline and report exports work through the
     const make = button(root, 'Generate report');
     const reportType = all(root).find((e) => e.attrs['aria-label'] === 'Report type');
     const reportFloor = all(root).find((e) => e.attrs['aria-label'] === 'Analysis level');
-    const reportFormat = all(root).find((e) => e.attrs['aria-label'] === 'Report format');
     assert.equal(make.hidden, true);
+    // whole-building reports need no level choice
     reportType.value = 'log';
     await reportType.fire('change');
-    assert.equal(make.hidden, true);
-    reportFloor.value = 'building';
-    await reportFloor.fire('change');
-    assert.equal(make.hidden, true);
-    await button(reportFormat, 'HTML').fire('click');
-    assert.equal(button(reportFormat, 'HTML').attrs['aria-pressed'], 'true');
-    assert.equal(button(reportFormat, 'CSV').attrs['aria-pressed'], 'false');
     assert.equal(make.hidden, false);
     const saved = [];
     window.claude = { use: async () => ({ save: async (value) => saved.push(value) }) };
     await make.fire('click');
     assert.match(app.textContent, /Ready: Simulation log analysis/);
-    assert.equal(saved.length, 1);
-    assert.match(saved[0].filename, /_log_.*\.html$/);
+    assert.equal(saved.length, 0, 'nothing is saved until a format is chosen');
     const downloads = all(root).find((e) => e.className === 'row report-downloads');
     assert.equal(downloads.hidden, false);
-    assert.ok(button(root, 'Download HTML'));
-    assert.equal(button(root, 'Download CSV'), undefined);
+    // one generated report exports every format without re-running the analysis
+    await button(root, 'Download HTML').fire('click');
+    await button(root, 'Download CSV').fire('click');
+    assert.equal(saved.length, 2);
+    assert.match(saved[0].filename, /_log_.*\.html$/);
+    assert.match(saved[1].filename, /_log_.*\.csv$/);
+    assert.ok(button(root, 'Open / Print PDF'));
+    // the key member map needs a level
     reportType.value = 'keymembers';
     await reportType.fire('change');
     assert.equal(make.hidden, true);
     assert.equal(reportFloor.value, '');
-    assert.ok(reportFormat.children.every((e) => e.attrs['aria-pressed'] === 'false'));
     assert.equal(downloads.hidden, true);
+    reportFloor.value = '1';
+    await reportFloor.fire('change');
+    assert.equal(make.hidden, false);
     await button(app, 'Clear').fire('click');
     assert.doesNotMatch(app.textContent, /BASELINE/);
   } finally {
